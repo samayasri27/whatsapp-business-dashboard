@@ -11,7 +11,39 @@ class Contact(BaseModel):
     status: str = "Active"
     lastMessage: Optional[str] = None
     lastMessageTime: Optional[str] = None
+    customFields: Optional[dict] = {}
+    notes: Optional[str] = None
+    avatar: Optional[str] = None
+    user_id: Optional[str] = None
     createdAt: datetime = Field(default_factory=datetime.now)
+    updatedAt: Optional[datetime] = None
+
+class ContactCreate(BaseModel):
+    name: str
+    phone: str
+    email: Optional[str] = None
+    tags: List[str] = []
+    status: str = "Active"
+    customFields: Optional[dict] = {}
+    notes: Optional[str] = None
+
+class ContactUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    tags: Optional[List[str]] = None
+    status: Optional[str] = None
+    customFields: Optional[dict] = None
+    notes: Optional[str] = None
+
+class BulkContactOperation(BaseModel):
+    contactIds: List[str]
+    operation: str  # "tag", "delete", "export", "update_status"
+    data: Optional[dict] = None  # Additional data for the operation
+
+class ContactImport(BaseModel):
+    contacts: List[dict]
+    source: Optional[str] = "manual"
 
 class Message(BaseModel):
     id: str

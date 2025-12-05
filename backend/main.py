@@ -1,14 +1,38 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import os
 from dotenv import load_dotenv
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
+from bson import ObjectId
 
 load_dotenv()
 
 app = FastAPI(title="WhatsApp Business API - Hybrid Auth (Clerk + JWT)")
+
+# Helper function to convert MongoDB documents to JSON-safe dictionaries
+def mongo_to_dict(doc: Dict) -> Dict:
+    """Convert MongoDB document to JSON-safe dictionary"""
+    if doc is None:
+        return None
+    if isinstance(doc, list):
+        return [mongo_to_dict(item) for item in doc]
+    if isinstance(doc, dict):
+        result = {}
+        for key, value in doc.items():
+            if key == "_id":
+                continue  # Skip _id field
+            elif isinstance(value, ObjectId):
+                result[key] = str(value)
+            elif isinstance(value, dict):
+                result[key] = mongo_to_dict(value)
+            elif isinstance(value, list):
+                result[key] = [mongo_to_dict(item) if isinstance(item, dict) else item for item in value]
+            else:
+                result[key] = value
+        return result
+    return doc
 
 # CORS Configuration
 app.add_middleware(
@@ -222,94 +246,97 @@ async def verify_token_endpoint(user: Dict[str, Any] = Depends(verify_jwt_auth))
         "data": user["data"]
     }
 
-@app.get("/users")
-async def get_users(login_user: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
-    """Get all contacts for a user"""
+@app.get("/contacts")
+async def get_contacts(
+    search: Optional[str] = None,
+    status: Optional[str] = None,
+    tag: Optional[str] = None,
+    sort_by: Optional[str] = "name",
+    sort_order: Optional[str] = "asc",
+    page: int = 1,
+    limit: int = 50,
+    user: Dict[str, Any] = Depends(verify_jwt_auth)
+):
+    """Get all contacts with search, filter, and sorting"""
     from database import get_contacts_collection
     
     try:
         contacts_collection = get_contacts_collection()
         
         if contacts_collection is None:
-            # MongoDB not connected, return sample data
-            return [
-                {
-                    "id": "1",
-                    "user_id": login_user,
-                    "name": "Sarah Johnson",
-                    "phone": "+1 (555) 123-4567",
-                    "email": "sarah.johnson@email.com",
-                    "tags": ["VIP", "Customer"],
-                    "status": "Active",
-                    "lastMessage": "2 hours ago",
-                    "avatar": "SJ"
-                }
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Build query
+        query = {"user_id": user["user_id"]}
+        
+        # Search filter
+        if search:
+            query["$or"] = [
+                {"name": {"$regex": search, "$options": "i"}},
+                {"phone": {"$regex": search, "$options": "i"}},
+                {"email": {"$regex": search, "$options": "i"}}
             ]
         
-        # Get contacts for this user
-        contacts = list(contacts_collection.find(
-            {"user_id": login_user},
-            {"_id": 0}  # Exclude MongoDB _id
-        ))
+        # Status filter
+        if status and status != "all":
+            query["status"] = status
         
-        # If no contacts, return sample data
-        if not contacts:
-            sample_contacts = [
-                {
-                    "id": "1",
-                    "user_id": login_user,
-                    "name": "Sarah Johnson",
-                    "phone": "+1 (555) 123-4567",
-                    "email": "sarah.johnson@email.com",
-                    "tags": ["VIP", "Customer"],
-                    "status": "Active",
-                    "lastMessage": "2 hours ago",
-                    "avatar": "SJ"
-                },
-                {
-                    "id": "2",
-                    "user_id": login_user,
-                    "name": "Michael Chen",
-                    "phone": "+1 (555) 234-5678",
-                    "email": "michael.chen@email.com",
-                    "tags": ["Lead", "Prospect"],
-                    "status": "Active",
-                    "lastMessage": "5 hours ago",
-                    "avatar": "MC"
-                },
-                {
-                    "id": "3",
-                    "user_id": login_user,
-                    "name": "Emily Davis",
-                    "phone": "+1 (555) 345-6789",
-                    "email": "emily.davis@email.com",
-                    "tags": ["Customer", "Support"],
-                    "status": "Inactive",
-                    "lastMessage": "1 day ago",
-                    "avatar": "ED"
-                }
-            ]
-            # Insert sample data
-            contacts_collection.insert_many(sample_contacts)
-            return sample_contacts
+        # Tag filter
+        if tag and tag != "all":
+            query["tags"] = tag
         
-        return contacts
+        # Count total
+        total = contacts_collection.count_documents(query)
+        
+        # Sort
+        sort_direction = 1 if sort_order == "asc" else -1
+        sort_field = sort_by if sort_by else "name"
+        
+        # Pagination
+        skip = (page - 1) * limit
+        
+        # Get contacts
+        contacts_raw = list(
+            contacts_collection
+            .find(query)
+            .sort(sort_field, sort_direction)
+            .skip(skip)
+            .limit(limit)
+        )
+        contacts = [mongo_to_dict(c) for c in contacts_raw]
+        
+        return {
+            "contacts": contacts,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "pages": (total + limit - 1) // limit
+        }
     except Exception as e:
         print(f"Error fetching contacts: {e}")
         import traceback
         traceback.print_exc()
-        # Return sample data on error
-        return [
-            {
-                "id": "1",
-                "name": "Sarah Johnson",
-                "phone": "+1 (555) 123-4567",
-                "email": "sarah.johnson@email.com",
-                "tags": ["VIP", "Customer"],
-                "status": "Active",
-                "lastMessage": "2 hours ago"
-            }
-        ]
+        raise HTTPException(status_code=500, detail=f"Failed to fetch contacts: {str(e)}")
+
+@app.get("/users")
+async def get_users(login_user: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Get all contacts for a user (legacy endpoint)"""
+    from database import get_contacts_collection
+    
+    try:
+        contacts_collection = get_contacts_collection()
+        
+        if contacts_collection is None:
+            return []
+        
+        # Get contacts for this user
+        contacts_raw = list(contacts_collection.find({"user_id": login_user}))
+        contacts = [mongo_to_dict(c) for c in contacts_raw]
+        
+        return contacts
+    except Exception as e:
+        print(f"Error fetching contacts: {e}")
+        return []
 
 @app.get("/tags")
 async def get_tags(user: Dict[str, Any] = Depends(verify_jwt_auth)):
@@ -355,10 +382,8 @@ async def get_chat_history(phone_number: str, user: Dict[str, Any] = Depends(ver
         contact_name = contact["name"] if contact else "Unknown"
         
         # Get messages
-        messages = list(messages_collection.find(
-            {"phoneNumber": phone_number},
-            {"_id": 0}
-        ).sort("timestamp", 1))
+        messages_raw = list(messages_collection.find({"phoneNumber": phone_number}).sort("timestamp", 1))
+        messages = [mongo_to_dict(m) for m in messages_raw]
         
         # If no messages, create sample conversation
         if not messages:
@@ -463,10 +488,8 @@ async def get_campaigns(user: Dict[str, Any] = Depends(verify_jwt_auth)):
             return []
         
         # Get campaigns for this user
-        campaigns = list(campaigns_collection.find(
-            {"user_id": user["user_id"]},
-            {"_id": 0}
-        ))
+        campaigns_raw = list(campaigns_collection.find({"user_id": user["user_id"]}))
+        campaigns = [mongo_to_dict(c) for c in campaigns_raw]
         
         # If no campaigns, create sample data
         if not campaigns:
@@ -544,7 +567,8 @@ async def get_templates(user: Dict[str, Any] = Depends(verify_jwt_auth)):
             return []
         
         # Get templates
-        templates = list(templates_collection.find({}, {"_id": 0}))
+        templates_raw = list(templates_collection.find({}))
+        templates = [mongo_to_dict(t) for t in templates_raw]
         
         # If no templates, create sample data
         if not templates:
@@ -625,6 +649,30 @@ async def get_sheets(user: Dict[str, Any] = Depends(verify_jwt_auth)):
 
 # Additional endpoints for full functionality
 
+@app.get("/contacts/{contact_id}")
+async def get_contact(contact_id: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Get a single contact by ID"""
+    from database import get_contacts_collection
+    
+    try:
+        contacts_collection = get_contacts_collection()
+        
+        if contacts_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        contact = contacts_collection.find_one(
+            {"id": contact_id, "user_id": user["user_id"]}
+        )
+        
+        if not contact:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        
+        return mongo_to_dict(contact)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch contact: {str(e)}")
+
 @app.post("/contacts")
 async def create_contact(contact: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
     """Create a new contact"""
@@ -634,6 +682,18 @@ async def create_contact(contact: dict, user: Dict[str, Any] = Depends(verify_jw
     try:
         contacts_collection = get_contacts_collection()
         
+        if contacts_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Check if contact with same phone already exists
+        existing = contacts_collection.find_one({
+            "phone": contact.get("phone"),
+            "user_id": user["user_id"]
+        })
+        
+        if existing:
+            raise HTTPException(status_code=400, detail="Contact with this phone number already exists")
+        
         contact_doc = {
             "id": str(uuid.uuid4()),
             "user_id": user["user_id"],
@@ -642,14 +702,18 @@ async def create_contact(contact: dict, user: Dict[str, Any] = Depends(verify_jw
             "email": contact.get("email"),
             "tags": contact.get("tags", []),
             "status": contact.get("status", "Active"),
+            "customFields": contact.get("customFields", {}),
+            "notes": contact.get("notes"),
             "avatar": contact.get("name", "U")[:2].upper(),
-            "createdAt": datetime.now().isoformat()
+            "createdAt": datetime.now().isoformat(),
+            "updatedAt": datetime.now().isoformat()
         }
         
-        if contacts_collection is not None:
-            contacts_collection.insert_one(contact_doc)
+        contacts_collection.insert_one(contact_doc)
         
-        return {"success": True, "contact": contact_doc}
+        return {"success": True, "contact": mongo_to_dict(contact_doc)}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create contact: {str(e)}")
 
@@ -664,15 +728,23 @@ async def update_contact(contact_id: str, contact: dict, user: Dict[str, Any] = 
         if contacts_collection is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
+        # Add updatedAt timestamp
+        update_data = {**contact, "updatedAt": datetime.now().isoformat()}
+        
         result = contacts_collection.update_one(
             {"id": contact_id, "user_id": user["user_id"]},
-            {"$set": contact}
+            {"$set": update_data}
         )
         
-        if result.modified_count == 0:
+        if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
         
-        return {"success": True, "message": "Contact updated"}
+        # Get updated contact
+        updated_contact = contacts_collection.find_one({"id": contact_id})
+        
+        return {"success": True, "contact": mongo_to_dict(updated_contact)}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update contact: {str(e)}")
 
@@ -695,8 +767,262 @@ async def delete_contact(contact_id: str, user: Dict[str, Any] = Depends(verify_
             raise HTTPException(status_code=404, detail="Contact not found")
         
         return {"success": True, "message": "Contact deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete contact: {str(e)}")
+
+@app.post("/contacts/bulk")
+async def bulk_contact_operation(operation: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Perform bulk operations on contacts"""
+    from database import get_contacts_collection
+    import csv
+    import io
+    
+    try:
+        contacts_collection = get_contacts_collection()
+        
+        if contacts_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        contact_ids = operation.get("contactIds", [])
+        op_type = operation.get("operation")
+        data = operation.get("data", {})
+        
+        if not contact_ids:
+            raise HTTPException(status_code=400, detail="No contacts selected")
+        
+        # Build query for selected contacts
+        query = {
+            "id": {"$in": contact_ids},
+            "user_id": user["user_id"]
+        }
+        
+        if op_type == "delete":
+            result = contacts_collection.delete_many(query)
+            return {
+                "success": True,
+                "message": f"Deleted {result.deleted_count} contacts",
+                "count": result.deleted_count
+            }
+        
+        elif op_type == "tag":
+            tags_to_add = data.get("tags", [])
+            result = contacts_collection.update_many(
+                query,
+                {"$addToSet": {"tags": {"$each": tags_to_add}}}
+            )
+            return {
+                "success": True,
+                "message": f"Tagged {result.modified_count} contacts",
+                "count": result.modified_count
+            }
+        
+        elif op_type == "update_status":
+            new_status = data.get("status")
+            if not new_status:
+                raise HTTPException(status_code=400, detail="Status is required")
+            
+            result = contacts_collection.update_many(
+                query,
+                {"$set": {"status": new_status, "updatedAt": datetime.now().isoformat()}}
+            )
+            return {
+                "success": True,
+                "message": f"Updated {result.modified_count} contacts",
+                "count": result.modified_count
+            }
+        
+        elif op_type == "export":
+            # Get contacts
+            contacts_raw = list(contacts_collection.find(query))
+            contacts = [mongo_to_dict(c) for c in contacts_raw]
+            
+            # Create CSV
+            output = io.StringIO()
+            if contacts:
+                fieldnames = ["id", "name", "phone", "email", "tags", "status", "notes", "createdAt"]
+                writer = csv.DictWriter(output, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                for contact in contacts:
+                    row = {
+                        "id": contact.get("id", ""),
+                        "name": contact.get("name", ""),
+                        "phone": contact.get("phone", ""),
+                        "email": contact.get("email", ""),
+                        "tags": ",".join(contact.get("tags", [])),
+                        "status": contact.get("status", ""),
+                        "notes": contact.get("notes", ""),
+                        "createdAt": contact.get("createdAt", "")
+                    }
+                    writer.writerow(row)
+            
+            csv_content = output.getvalue()
+            
+            return {
+                "success": True,
+                "message": f"Exported {len(contacts)} contacts",
+                "count": len(contacts),
+                "csv": csv_content
+            }
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown operation: {op_type}")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in bulk operation: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Bulk operation failed: {str(e)}")
+
+@app.post("/contacts/import")
+async def import_contacts(import_data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Import contacts from CSV or other sources"""
+    from database import get_contacts_collection
+    import uuid
+    import csv
+    import io
+    
+    try:
+        contacts_collection = get_contacts_collection()
+        
+        if contacts_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        contacts_to_import = import_data.get("contacts", [])
+        source = import_data.get("source", "manual")
+        
+        if not contacts_to_import:
+            raise HTTPException(status_code=400, detail="No contacts to import")
+        
+        imported = 0
+        skipped = 0
+        errors = []
+        
+        for contact_data in contacts_to_import:
+            try:
+                # Validate required fields
+                if not contact_data.get("name") or not contact_data.get("phone"):
+                    skipped += 1
+                    errors.append(f"Skipped contact: missing name or phone")
+                    continue
+                
+                # Check if contact already exists
+                existing = contacts_collection.find_one({
+                    "phone": contact_data.get("phone"),
+                    "user_id": user["user_id"]
+                })
+                
+                if existing:
+                    skipped += 1
+                    errors.append(f"Skipped {contact_data.get('name')}: phone already exists")
+                    continue
+                
+                # Create contact
+                contact_doc = {
+                    "id": str(uuid.uuid4()),
+                    "user_id": user["user_id"],
+                    "name": contact_data.get("name"),
+                    "phone": contact_data.get("phone"),
+                    "email": contact_data.get("email"),
+                    "tags": contact_data.get("tags", []) if isinstance(contact_data.get("tags"), list) else [],
+                    "status": contact_data.get("status", "Active"),
+                    "customFields": contact_data.get("customFields", {}),
+                    "notes": contact_data.get("notes"),
+                    "avatar": contact_data.get("name", "U")[:2].upper(),
+                    "createdAt": datetime.now().isoformat(),
+                    "updatedAt": datetime.now().isoformat()
+                }
+                
+                contacts_collection.insert_one(contact_doc)
+                imported += 1
+                
+            except Exception as e:
+                skipped += 1
+                errors.append(f"Error importing {contact_data.get('name', 'unknown')}: {str(e)}")
+        
+        return {
+            "success": True,
+            "imported": imported,
+            "skipped": skipped,
+            "errors": errors[:10],  # Return first 10 errors
+            "message": f"Imported {imported} contacts, skipped {skipped}"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error importing contacts: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
+
+@app.get("/contacts/export")
+async def export_contacts(
+    format: str = "csv",
+    user: Dict[str, Any] = Depends(verify_jwt_auth)
+):
+    """Export all contacts"""
+    from database import get_contacts_collection
+    import csv
+    import io
+    import json
+    
+    try:
+        contacts_collection = get_contacts_collection()
+        
+        if contacts_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Get all contacts for user
+        contacts_raw = list(contacts_collection.find({"user_id": user["user_id"]}))
+        contacts = [mongo_to_dict(c) for c in contacts_raw]
+        
+        if format == "csv":
+            output = io.StringIO()
+            if contacts:
+                fieldnames = ["id", "name", "phone", "email", "tags", "status", "notes", "createdAt"]
+                writer = csv.DictWriter(output, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                for contact in contacts:
+                    row = {
+                        "id": contact.get("id", ""),
+                        "name": contact.get("name", ""),
+                        "phone": contact.get("phone", ""),
+                        "email": contact.get("email", ""),
+                        "tags": ",".join(contact.get("tags", [])),
+                        "status": contact.get("status", ""),
+                        "notes": contact.get("notes", ""),
+                        "createdAt": contact.get("createdAt", "")
+                    }
+                    writer.writerow(row)
+            
+            return {
+                "success": True,
+                "format": "csv",
+                "count": len(contacts),
+                "data": output.getvalue()
+            }
+        
+        elif format == "json":
+            return {
+                "success": True,
+                "format": "json",
+                "count": len(contacts),
+                "data": contacts
+            }
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 @app.post("/campaigns")
 async def create_campaign(campaign: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
