@@ -108,7 +108,7 @@ async def verify_jwt_auth(authorization: Optional[str] = Header(None)) -> Dict[s
     if not authorization:
         if DEBUG:
             print("⚠️ DEBUG mode: Allowing request without token")
-            return {"type": "debug", "user_id": "dev_user", "data": {"debug": True}}
+            return {"type": "debug", "user_id": "default_user", "data": {"debug": True}}
         raise HTTPException(status_code=401, detail="Authorization header missing")
     
     token = authorization.replace("Bearer ", "")
@@ -124,7 +124,7 @@ async def verify_jwt_auth(authorization: Optional[str] = Header(None)) -> Dict[s
         # If DEBUG mode, allow anyway
         if DEBUG:
             print("⚠️ DEBUG mode: Allowing request without valid token")
-            return {"type": "debug", "user_id": "dev_user", "data": {"debug": True}}
+            return {"type": "debug", "user_id": "default_user", "data": {"debug": True}}
         
         raise HTTPException(
             status_code=401,
@@ -488,7 +488,9 @@ async def get_campaigns(user: Dict[str, Any] = Depends(verify_jwt_auth)):
             return []
         
         # Get campaigns for this user
+        print(f"🔍 Fetching campaigns for user_id: {user['user_id']}")
         campaigns_raw = list(campaigns_collection.find({"user_id": user["user_id"]}))
+        print(f"📊 Found {len(campaigns_raw)} campaigns in MongoDB")
         campaigns = [mongo_to_dict(c) for c in campaigns_raw]
         
         # If no campaigns, create sample data
@@ -556,75 +558,291 @@ async def get_imported_numbers(sheet_name: str, user: Dict[str, Any] = Depends(v
     return []
 
 @app.get("/templates")
-async def get_templates(user: Dict[str, Any] = Depends(verify_jwt_auth)):
-    """Get all WhatsApp templates"""
+async def get_templates(
+    search: Optional[str] = None,
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    language: Optional[str] = None,
+    sort_by: Optional[str] = "name",
+    sort_order: Optional[str] = "asc",
+    page: int = 1,
+    limit: int = 50,
+    user: Dict[str, Any] = Depends(verify_jwt_auth)
+):
+    """Get all WhatsApp templates with search and filtering"""
+    from database import get_templates_collection
+    import re
+    
+    try:
+        templates_collection = get_templates_collection()
+        
+        if templates_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Build query
+        query = {}
+        
+        # Search filter
+        if search:
+            query["$or"] = [
+                {"name": {"$regex": search, "$options": "i"}},
+                {"content": {"$regex": search, "$options": "i"}},
+                {"category": {"$regex": search, "$options": "i"}}
+            ]
+        
+        # Category filter
+        if category and category.lower() != "all":
+            query["category"] = {"$regex": f"^{category}$", "$options": "i"}
+        
+        # Status filter
+        if status and status.lower() != "all":
+            query["status"] = {"$regex": f"^{status}$", "$options": "i"}
+        
+        # Language filter
+        if language and language.lower() != "all":
+            query["language"] = {"$regex": f"^{language}$", "$options": "i"}
+        
+        # Count total
+        total = templates_collection.count_documents(query)
+        
+        # Sort
+        sort_direction = 1 if sort_order == "asc" else -1
+        sort_field = sort_by if sort_by else "name"
+        
+        # Pagination
+        skip = (page - 1) * limit
+        
+        # Get templates
+        print(f"🔍 Fetching templates with query: {query}")
+        templates_raw = list(
+            templates_collection
+            .find(query)
+            .sort(sort_field, sort_direction)
+            .skip(skip)
+            .limit(limit)
+        )
+        print(f"📊 Found {len(templates_raw)} templates in MongoDB (total: {total})")
+        templates = [mongo_to_dict(t) for t in templates_raw]
+        
+        # Extract parameters from content for each template
+        for template in templates:
+            content = template.get("content", "")
+            params = re.findall(r'\{\{(\w+)\}\}', content)
+            template["parameters"] = list(set(params))  # Remove duplicates
+        
+        return {
+            "templates": templates,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "pages": (total + limit - 1) // limit
+        }
+    except Exception as e:
+        print(f"Error fetching templates: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch templates: {str(e)}")
+
+@app.get("/templates/{template_id}")
+async def get_template(template_id: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Get a single template by ID"""
+    from database import get_templates_collection
+    import re
+    
+    try:
+        templates_collection = get_templates_collection()
+        
+        if templates_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        template = templates_collection.find_one({"id": template_id})
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        template_dict = mongo_to_dict(template)
+        
+        # Extract parameters
+        content = template_dict.get("content", "")
+        params = re.findall(r'\{\{(\w+)\}\}', content)
+        template_dict["parameters"] = list(set(params))
+        
+        return template_dict
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch template: {str(e)}")
+
+@app.post("/templates")
+async def create_template(template: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Create a new template"""
+    from database import get_templates_collection
+    import uuid
+    import re
+    
+    try:
+        templates_collection = get_templates_collection()
+        
+        if templates_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Check if template with same name already exists
+        existing = templates_collection.find_one({
+            "name": template.get("name"),
+            "user_id": user["user_id"]
+        })
+        
+        if existing:
+            raise HTTPException(status_code=400, detail="Template with this name already exists")
+        
+        # Extract parameters from content
+        content = template.get("content", "")
+        params = re.findall(r'\{\{(\w+)\}\}', content)
+        
+        template_doc = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["user_id"],
+            "name": template.get("name"),
+            "category": template.get("category"),
+            "language": template.get("language", "English"),
+            "content": content,
+            "status": template.get("status", "pending"),
+            "parameters": list(set(params)),
+            "usageCount": 0,
+            "createdAt": datetime.now().isoformat(),
+            "updatedAt": datetime.now().isoformat()
+        }
+        
+        templates_collection.insert_one(template_doc)
+        
+        return {"success": True, "template": mongo_to_dict(template_doc)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
+
+@app.put("/templates/{template_id}")
+async def update_template(template_id: str, template: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Update a template"""
+    from database import get_templates_collection
+    import re
+    
+    try:
+        templates_collection = get_templates_collection()
+        
+        if templates_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Extract parameters if content is being updated
+        if "content" in template:
+            content = template.get("content", "")
+            params = re.findall(r'\{\{(\w+)\}\}', content)
+            template["parameters"] = list(set(params))
+        
+        # Add updatedAt timestamp
+        update_data = {**template, "updatedAt": datetime.now().isoformat()}
+        
+        result = templates_collection.update_one(
+            {"id": template_id},
+            {"$set": update_data}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Get updated template
+        updated_template = templates_collection.find_one({"id": template_id})
+        
+        return {"success": True, "template": mongo_to_dict(updated_template)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update template: {str(e)}")
+
+@app.delete("/templates/{template_id}")
+async def delete_template(template_id: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Delete a template"""
     from database import get_templates_collection
     
     try:
         templates_collection = get_templates_collection()
         
         if templates_collection is None:
-            return []
+            raise HTTPException(status_code=503, detail="Database not available")
         
-        # Get templates
-        templates_raw = list(templates_collection.find({}))
-        templates = [mongo_to_dict(t) for t in templates_raw]
+        result = templates_collection.delete_one({"id": template_id})
         
-        # If no templates, create sample data
-        if not templates:
-            sample_templates = [
-                {
-                    "id": "1",
-                    "name": "Welcome Message",
-                    "category": "utility",
-                    "status": "approved",
-                    "language": "English",
-                    "content": "Hello {{name}}! 👋 Welcome to our service. We're excited to have you on board!",
-                    "parameters": ["name"],
-                    "usageCount": 1234,
-                    "createdAt": "Mar 1, 2024"
-                },
-                {
-                    "id": "2",
-                    "name": "Order Confirmation",
-                    "category": "transactional",
-                    "status": "approved",
-                    "language": "English",
-                    "content": "Hi {{name}}! Your order #{{order_id}} has been confirmed. Expected delivery: {{date}}.",
-                    "parameters": ["name", "order_id", "date"],
-                    "usageCount": 856,
-                    "createdAt": "Feb 15, 2024"
-                },
-                {
-                    "id": "3",
-                    "name": "Promotional Offer",
-                    "category": "marketing",
-                    "status": "approved",
-                    "language": "English",
-                    "content": "🎉 Exclusive offer for you, {{name}}! Get {{discount}}% off. Use code: {{code}}",
-                    "parameters": ["name", "discount", "code"],
-                    "usageCount": 2341,
-                    "createdAt": "Mar 5, 2024"
-                },
-                {
-                    "id": "4",
-                    "name": "OTP Verification",
-                    "category": "authentication",
-                    "status": "approved",
-                    "language": "English",
-                    "content": "Your verification code is {{code}}. This code expires in 10 minutes.",
-                    "parameters": ["code"],
-                    "usageCount": 4521,
-                    "createdAt": "Jan 15, 2024"
-                }
-            ]
-            templates_collection.insert_many(sample_templates)
-            return sample_templates
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Template not found")
         
-        return templates
+        return {"success": True, "message": "Template deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error fetching templates: {e}")
-        return []
+        raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
+
+@app.post("/templates/{template_id}/use")
+async def use_template(template_id: str, parameters: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Use a template and increment usage count"""
+    from database import get_templates_collection
+    import re
+    
+    try:
+        templates_collection = get_templates_collection()
+        
+        if templates_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Get template
+        template = templates_collection.find_one({"id": template_id})
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Fill parameters
+        content = template.get("content", "")
+        filled_content = content
+        
+        for key, value in parameters.items():
+            filled_content = re.sub(f'\\{{\\{{{key}\\}}\\}}', str(value), filled_content)
+        
+        # Increment usage count
+        templates_collection.update_one(
+            {"id": template_id},
+            {"$inc": {"usageCount": 1}}
+        )
+        
+        return {
+            "success": True,
+            "filled_content": filled_content,
+            "original_content": content
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to use template: {str(e)}")
+
+@app.get("/templates/categories/list")
+async def get_template_categories(user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Get all template categories"""
+    from database import get_templates_collection
+    
+    try:
+        templates_collection = get_templates_collection()
+        
+        if templates_collection is None:
+            return ["marketing", "utility", "transactional", "authentication"]
+        
+        # Get unique categories
+        categories = templates_collection.distinct("category")
+        
+        if not categories:
+            return ["marketing", "utility", "transactional", "authentication"]
+        
+        return categories
+    except Exception as e:
+        print(f"Error fetching categories: {e}")
+        return ["marketing", "utility", "transactional", "authentication"]
 
 @app.get("/sheets")
 async def get_sheets(user: Dict[str, Any] = Depends(verify_jwt_auth)):
@@ -1033,26 +1251,46 @@ async def create_campaign(campaign: dict, user: Dict[str, Any] = Depends(verify_
     try:
         campaigns_collection = get_campaigns_collection()
         
+        if campaigns_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Validate required fields
+        if not campaign.get("name"):
+            raise HTTPException(status_code=400, detail="Campaign name is required")
+        if not campaign.get("description"):
+            raise HTTPException(status_code=400, detail="Campaign description is required")
+        if not campaign.get("template"):
+            raise HTTPException(status_code=400, detail="Template is required")
+        
         campaign_doc = {
             "id": str(uuid.uuid4()),
             "user_id": user["user_id"],
             "name": campaign.get("name"),
             "description": campaign.get("description"),
-            "status": "Draft",
-            "recipients": 0,
+            "template": campaign.get("template"),
+            "contactSource": campaign.get("contactSource", "all"),
+            "contactTags": campaign.get("contactTags", []),
+            "sheet": campaign.get("sheet"),
+            "status": campaign.get("status", "Draft"),
+            "recipients": campaign.get("recipients", 0),
             "sent": 0,
             "delivered": 0,
             "read": 0,
             "readRate": "0%",
             "deliveryRate": "0%",
-            "createdAt": datetime.now().isoformat()
+            "createdAt": datetime.now().isoformat(),
+            "scheduledAt": campaign.get("scheduledDate")
         }
         
-        if campaigns_collection is not None:
-            campaigns_collection.insert_one(campaign_doc)
+        campaigns_collection.insert_one(campaign_doc)
         
-        return {"success": True, "campaign": campaign_doc}
+        return {"success": True, "campaign": mongo_to_dict(campaign_doc)}
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"Error creating campaign: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to create campaign: {str(e)}")
 
 @app.get("/dashboard/stats")
@@ -1109,6 +1347,189 @@ async def get_dashboard_stats(user: Dict[str, Any] = Depends(verify_jwt_auth)):
 async def get_campaign_status(campaign_name: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
     """Get campaign status"""
     return {"name": campaign_name, "status": "Active"}
+
+# User Management Endpoints
+
+@app.get("/api/users")
+async def get_all_users(user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Get all users (Admin only)"""
+    from database import get_users_collection
+    
+    try:
+        users_collection = get_users_collection()
+        
+        if users_collection is None:
+            # Return mock data if MongoDB not connected
+            return [
+                {
+                    "id": "1",
+                    "name": "John Admin",
+                    "email": "john@company.com",
+                    "role": "Admin",
+                    "status": "Active",
+                    "lastActive": "2 minutes ago",
+                    "joinedDate": "Jan 15, 2024",
+                    "avatar": "JA"
+                }
+            ]
+        
+        users_raw = list(users_collection.find({}))
+        users = [mongo_to_dict(u) for u in users_raw]
+        
+        return users
+    except Exception as e:
+        print(f"Error fetching users: {e}")
+        return []
+
+@app.post("/api/users")
+async def create_user(user_data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Create a new user (Admin only)"""
+    from database import get_users_collection
+    import uuid
+    
+    try:
+        users_collection = get_users_collection()
+        
+        if users_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        user_doc = {
+            "id": str(uuid.uuid4()),
+            "name": user_data.get("name"),
+            "email": user_data.get("email"),
+            "role": user_data.get("role", "User"),
+            "status": "Active",
+            "lastActive": datetime.now().isoformat(),
+            "joinedDate": datetime.now().isoformat(),
+            "avatar": user_data.get("name", "U")[:2].upper(),
+            "createdAt": datetime.now().isoformat()
+        }
+        
+        users_collection.insert_one(user_doc)
+        
+        return {"success": True, "user": mongo_to_dict(user_doc)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+
+@app.put("/api/users/{user_id}")
+async def update_user(user_id: str, user_data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Update user (Admin only)"""
+    from database import get_users_collection
+    
+    try:
+        users_collection = get_users_collection()
+        
+        if users_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        result = users_collection.update_one(
+            {"id": user_id},
+            {"$set": user_data}
+        )
+        
+        if result.modified_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {"success": True, "message": "User updated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update user: {str(e)}")
+
+@app.delete("/api/users/{user_id}")
+async def delete_user(user_id: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Delete user (Admin only)"""
+    from database import get_users_collection
+    
+    try:
+        users_collection = get_users_collection()
+        
+        if users_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        result = users_collection.delete_one({"id": user_id})
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {"success": True, "message": "User deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+
+@app.get("/api/profile")
+async def get_user_profile(user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Get current user profile"""
+    from database import get_users_collection
+    
+    try:
+        users_collection = get_users_collection()
+        
+        if users_collection is None:
+            return {
+                "id": user["user_id"],
+                "name": "Demo User",
+                "email": "demo@example.com",
+                "role": "User",
+                "status": "Active"
+            }
+        
+        user_doc = users_collection.find_one({"id": user["user_id"]})
+        
+        if user_doc:
+            return mongo_to_dict(user_doc)
+        else:
+            return {
+                "id": user["user_id"],
+                "name": "Demo User",
+                "email": "demo@example.com",
+                "role": "User",
+                "status": "Active"
+            }
+    except Exception as e:
+        print(f"Error fetching profile: {e}")
+        return {
+            "id": user["user_id"],
+            "name": "Demo User",
+            "email": "demo@example.com",
+            "role": "User",
+            "status": "Active"
+        }
+
+@app.put("/api/profile")
+async def update_user_profile(profile_data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Update current user profile"""
+    from database import get_users_collection
+    
+    try:
+        users_collection = get_users_collection()
+        
+        if users_collection is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        result = users_collection.update_one(
+            {"id": user["user_id"]},
+            {"$set": profile_data}
+        )
+        
+        return {"success": True, "message": "Profile updated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update profile: {str(e)}")
+
+@app.get("/api/settings")
+async def get_user_settings(user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Get user settings"""
+    # TODO: Implement settings storage
+    return {
+        "emailNotifications": True,
+        "pushNotifications": True,
+        "darkMode": False,
+        "language": "en",
+        "timezone": "UTC"
+    }
+
+@app.put("/api/settings")
+async def update_user_settings(settings_data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Update user settings"""
+    # TODO: Implement settings storage
+    return {"success": True, "message": "Settings updated"}
 
 if __name__ == "__main__":
     import uvicorn

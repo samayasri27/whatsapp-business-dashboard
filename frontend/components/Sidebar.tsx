@@ -10,6 +10,9 @@ import {
   Megaphone,
   FileText,
   HelpCircle,
+  User as UserIcon,
+  Settings,
+  Shield,
 } from "lucide-react";
 import DarkModeToggle from "./DarkModeToggle";
 
@@ -68,7 +71,46 @@ export default function Sidebar() {
         </ul>
       </nav>
 
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+      <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-1">
+        {/* User Management (Admin only) */}
+        <Link
+          href="/users"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+            pathname === "/users"
+              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+              : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+          }`}
+        >
+          <Shield className="w-5 h-5" />
+          <span>User Management</span>
+        </Link>
+
+        {/* Profile */}
+        <Link
+          href="/profile"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+            pathname === "/profile"
+              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+              : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+          }`}
+        >
+          <UserIcon className="w-5 h-5" />
+          <span>Profile</span>
+        </Link>
+
+        {/* Settings */}
+        <Link
+          href="/settings"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+            pathname === "/settings"
+              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+              : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+          }`}
+        >
+          <Settings className="w-5 h-5" />
+          <span>Settings</span>
+        </Link>
+
         {/* Dark Mode Toggle */}
         <div className="flex items-center gap-3 px-3 py-2.5">
           <DarkModeToggle />

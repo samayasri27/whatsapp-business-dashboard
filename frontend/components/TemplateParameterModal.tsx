@@ -10,13 +10,19 @@ interface TemplateParameterModalProps {
   template: {
     title: string;
     message: string;
+    category?: string;
+    language?: string;
+    usageCount?: number;
+    createdAt?: string;
   } | null;
+  onSend?: (filledMessage: string) => void;
 }
 
 export default function TemplateParameterModal({
   isOpen,
   onClose,
   template,
+  onSend,
 }: TemplateParameterModalProps) {
   const [parameters, setParameters] = useState<Record<string, string>>({});
 
@@ -26,8 +32,8 @@ export default function TemplateParameterModal({
   const paramMatches = template.message.match(/\{\{(\w+)\}\}/g) || [];
   const paramNames = paramMatches.map((match) => match.replace(/\{\{|\}\}/g, ""));
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     
     // Replace parameters in message
     let filledMessage = template.message;
@@ -35,8 +41,12 @@ export default function TemplateParameterModal({
       filledMessage = filledMessage.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
     });
 
-    console.log("Filled message:", filledMessage);
-    toast.success("Template filled successfully!");
+    if (onSend) {
+      onSend(filledMessage);
+    } else {
+      console.log("Filled message:", filledMessage);
+      toast.success("Template filled successfully!");
+    }
     onClose();
   };
 
@@ -109,21 +119,35 @@ export default function TemplateParameterModal({
                   📋 Template Details
                 </h3>
                 <div className="space-y-3 text-sm">
+                  {template.category && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Category</span>
+                      <span className="font-medium dark:text-white capitalize">{template.category}</span>
+                    </div>
+                  )}
+                  {template.language && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Language</span>
+                      <span className="font-medium dark:text-white">{template.language}</span>
+                    </div>
+                  )}
+                  {template.usageCount !== undefined && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Used</span>
+                      <span className="font-medium dark:text-white">{template.usageCount} times</span>
+                    </div>
+                  )}
+                  {template.createdAt && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Created</span>
+                      <span className="font-medium dark:text-white">
+                        {new Date(template.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Category</span>
-                    <span className="font-medium dark:text-white">Utility</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Language</span>
-                    <span className="font-medium dark:text-white">English</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Used</span>
-                    <span className="font-medium dark:text-white">1234 times</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Created</span>
-                    <span className="font-medium dark:text-white">Mar 1, 2024</span>
+                    <span className="text-gray-600 dark:text-gray-400">Parameters</span>
+                    <span className="font-medium dark:text-white">{paramNames.length}</span>
                   </div>
                 </div>
               </div>
@@ -174,7 +198,7 @@ export default function TemplateParameterModal({
                   Copy
                 </button>
                 <button
-                  onClick={handleSubmit}
+                  onClick={() => handleSubmit()}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 text-sm"
                 >
                   <ExternalLink className="w-4 h-4" />

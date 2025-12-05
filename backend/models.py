@@ -83,7 +83,23 @@ class Template(BaseModel):
     content: str
     parameters: List[str] = []
     usageCount: int = 0
+    user_id: Optional[str] = None
     createdAt: datetime = Field(default_factory=datetime.now)
+    updatedAt: Optional[datetime] = None
+
+class TemplateCreate(BaseModel):
+    name: str
+    category: str
+    language: str
+    content: str
+    status: str = "pending"
+
+class TemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    language: Optional[str] = None
+    content: Optional[str] = None
+    status: Optional[str] = None
 
 class User(BaseModel):
     id: str

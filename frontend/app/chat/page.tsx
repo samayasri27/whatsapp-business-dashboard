@@ -2,28 +2,328 @@
 import Sidebar from "@/components/Sidebar";
 
 import Header from "@/components/Header";
-import { Search, Plus, Phone, Video, MoreVertical, Smile, Paperclip, Send } from "lucide-react";
+import { Search, Plus, Phone, Video, MoreVertical, Smile, Paperclip, Send, Check, CheckCheck, Image as ImageIcon, FileText, X, MessageSquare } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { useAuth } from "@clerk/nextjs";
+import toast from "react-hot-toast";
+import TemplateParameterModal from "@/components/TemplateParameterModal";
+
+interface Contact {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  avatar: string;
+  status: string;
+  tags?: string[];
+  lastMessage?: string;
+  lastMessageTime?: string;
+  unreadCount?: number;
+  online?: boolean;
+}
+
+interface Message {
+  id: string;
+  phoneNumber: string;
+  text: string;
+  timestamp: string;
+  sent: boolean;
+  status: "sending" | "sent" | "delivered" | "read" | "failed";
+  mediaUrl?: string;
+  mediaType?: "image" | "document";
+  template?: string;
+}
+
+interface Template {
+  id: string;
+  name: string;
+  content: string;
+  category: string;
+  status: string;
+  parameters: string[];
+}
 
 export default function Chat() {
-  const chats = [
-    { name: "Sarah Johnson", message: "That sounds great! Let me check an...", time: "2m", unread: 3, avatar: "SJ", online: true },
-    { name: "Michael Chen", message: "I've sent you the documents", time: "10m", unread: 0, avatar: "MC", online: false },
-    { name: "Emily Davis", message: "Can we schedule a call tomorrow?", time: "1h", unread: 1, avatar: "ED", online: true },
-    { name: "James Wilson", message: "Perfect, thank you!", time: "2h", unread: 0, avatar: "JW", online: false },
-    { name: "Amanda Brown", message: "I'll review the proposal and let you know", time: "3h", unread: 0, avatar: "AB", online: false },
-    { name: "David Lee", message: "Looking forward to our meeting", time: "5h", unread: 0, avatar: "DL", online: true },
-    { name: "Lisa Thompson", message: "Thanks for the update!", time: "1d", unread: 0, avatar: "LT", online: false },
-    { name: "Robert Martinez", message: "Let's discuss this next week", time: "2d", unread: 0, avatar: "RM", online: false },
-  ];
+  const { getToken } = useAuth();
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [messageInput, setMessageInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<{ title: string; message: string } | null>(null);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const messages = [
-    { text: "Hi! I'm interested in your products.", time: "10:30 AM", sent: false },
-    { text: "Hello! Thank you for reaching out. How can I help you today?", time: "10:32 AM", sent: true },
-    { text: "I'd like to know more about the pricing plans.", time: "10:33 AM", sent: false },
-    { text: "Of course! We have three plans: Basic at $29/mo, Pro at $79/mo, and Enterprise with custom pricing. Which one interests you?", time: "10:40 AM", sent: true },
-    { text: "The Pro plan sounds interesting. Does it include API access?", time: "10:38 AM", sent: false },
-    { text: "Yes! The Pro plan includes full API access with up to 10,000 requests/month. I can send you the detailed documentation.", time: "10:40 AM", sent: true },
-  ];
+  // Format timestamp to relative time
+  const formatTimestamp = (timestamp: string) => {
+    if (!timestamp) return "Now";
+    
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    // Format as date for older messages
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  // Fetch contacts on mount
+  useEffect(() => {
+    fetchContacts();
+    fetchTemplates();
+  }, []);
+
+  // Fetch messages when contact is selected
+  useEffect(() => {
+    if (selectedContact) {
+      fetchMessages(selectedContact.phone);
+      // Set up polling for real-time updates
+      const interval = setInterval(() => {
+        fetchMessages(selectedContact.phone);
+      }, 5000); // Poll every 5 seconds
+      return () => clearInterval(interval);
+    }
+  }, [selectedContact]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const fetchContacts = async () => {
+    try {
+      const token = await getToken();
+      const response = await fetch(`http://localhost:8000/users?login_user=default_user`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setContacts(data);
+        if (data.length > 0 && !selectedContact) {
+          setSelectedContact(data[0]);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching contacts:", error);
+      toast.error("Failed to load contacts");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMessages = async (phoneNumber: string) => {
+    try {
+      const token = await getToken();
+      const response = await fetch(`http://localhost:8000/chats/${encodeURIComponent(phoneNumber)}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setMessages(data.messages || []);
+      }
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+    }
+  };
+
+  const fetchTemplates = async () => {
+    try {
+      const token = await getToken();
+      const response = await fetch(`http://localhost:8000/templates`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setTemplates(data);
+      }
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+    }
+  };
+
+  const sendMessage = async () => {
+    if ((!messageInput.trim() && !mediaFile) || !selectedContact || sending) return;
+
+    setSending(true);
+    const tempId = Date.now().toString();
+    
+    // Optimistic update
+    const newMessage: Message = {
+      id: tempId,
+      phoneNumber: selectedContact.phone,
+      text: messageInput,
+      timestamp: new Date().toISOString(),
+      sent: true,
+      status: "sending",
+      mediaUrl: mediaPreview || undefined,
+      mediaType: mediaFile?.type.startsWith("image/") ? "image" : "document",
+    };
+    
+    setMessages([...messages, newMessage]);
+    setMessageInput("");
+    setMediaFile(null);
+    setMediaPreview(null);
+
+    try {
+      const token = await getToken();
+      const response = await fetch(`http://localhost:8000/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          phone: selectedContact.phone,
+          message: messageInput,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Update message status
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === tempId
+              ? { ...msg, id: data.messageId, status: "sent" }
+              : msg
+          )
+        );
+        toast.success("Message sent!");
+        
+        // Simulate delivery and read status updates
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === data.messageId ? { ...msg, status: "delivered" } : msg
+            )
+          );
+        }, 2000);
+        
+        setTimeout(() => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === data.messageId ? { ...msg, status: "read" } : msg
+            )
+          );
+        }, 5000);
+      } else {
+        throw new Error("Failed to send message");
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      // Update message status to failed
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempId ? { ...msg, status: "failed" } : msg
+        )
+      );
+      toast.error("Failed to send message");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setMediaFile(file);
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setMediaPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeMedia = () => {
+    setMediaFile(null);
+    setMediaPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleTemplateSelect = (template: Template) => {
+    setSelectedTemplate({
+      title: template.name,
+      message: template.content,
+    });
+    setShowTemplates(false);
+  };
+
+  const sendTemplateMessage = async (filledMessage: string) => {
+    if (!selectedContact) return;
+    
+    setMessageInput(filledMessage);
+    setSelectedTemplate(null);
+    // Auto-send after a brief delay
+    setTimeout(() => {
+      sendMessage();
+    }, 100);
+  };
+
+  const filteredContacts = contacts.filter((contact) =>
+    contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    contact.phone.includes(searchQuery)
+  );
+
+  const getMessageStatusIcon = (status: Message["status"]) => {
+    switch (status) {
+      case "sending":
+        return <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />;
+      case "sent":
+        return <Check className="w-4 h-4" />;
+      case "delivered":
+        return <CheckCheck className="w-4 h-4" />;
+      case "read":
+        return <CheckCheck className="w-4 h-4 text-blue-400" />;
+      case "failed":
+        return <X className="w-4 h-4 text-red-400" />;
+      default:
+        return null;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+        <Sidebar />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-400">Loading chats...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -32,10 +332,18 @@ export default function Chat() {
         <Header title="Messages" subtitle="Welcome back! Here's what's happening" />
       
       <div className="flex h-[calc(100vh-80px)]">
-        <div className="w-96 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
+        {/* Contacts List */}
+        <div className="w-96 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-2 mb-4">
               <h2 className="text-lg font-semibold flex-1 dark:text-white">Chats</h2>
+              <button 
+                onClick={() => setShowTemplates(!showTemplates)}
+                className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+                title="Templates"
+              >
+                <MessageSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              </button>
               <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                 <Plus className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               </button>
@@ -45,143 +353,282 @@ export default function Chat() {
               <input
                 type="text"
                 placeholder="Search chats..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
           </div>
-          <div className="overflow-y-auto h-[calc(100%-120px)]">
-            {chats.map((chat) => (
-              <div
-                key={chat.name}
-                className={`p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer ${
-                  chat.name === "Sarah Johnson" ? "bg-emerald-50 dark:bg-emerald-900/20" : ""
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
-                      {chat.avatar}
-                    </div>
-                    {chat.online && (
-                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="font-medium text-gray-900 dark:text-white">{chat.name}</p>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">{chat.time}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{chat.message}</p>
-                      {chat.unread > 0 && (
-                        <span className="bg-emerald-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center ml-2">
-                          {chat.unread}
-                        </span>
+          
+          {/* Templates Panel */}
+          {showTemplates && (
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-emerald-50 dark:bg-emerald-900/20">
+              <h3 className="text-sm font-semibold mb-2 dark:text-white">Quick Templates</h3>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {templates.slice(0, 5).map((template) => (
+                  <button
+                    key={template.id}
+                    onClick={() => handleTemplateSelect(template)}
+                    className="w-full text-left p-2 rounded-lg hover:bg-white dark:hover:bg-gray-700 text-sm"
+                  >
+                    <p className="font-medium dark:text-white">{template.name}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{template.content}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <div className="flex-1 overflow-y-auto">
+            {filteredContacts.length === 0 ? (
+              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                <p>No contacts found</p>
+              </div>
+            ) : (
+              filteredContacts.map((contact) => (
+                <div
+                  key={contact.id}
+                  onClick={() => setSelectedContact(contact)}
+                  className={`p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors ${
+                    selectedContact?.id === contact.id ? "bg-emerald-50 dark:bg-emerald-900/20" : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
+                        {contact.avatar}
+                      </div>
+                      {contact.online && (
+                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-gray-800 rounded-full"></div>
                       )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-medium text-gray-900 dark:text-white truncate">{contact.name}</p>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{formatTimestamp(contact.lastMessageTime || "")}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{contact.lastMessage || "No messages yet"}</p>
+                        {contact.unreadCount && contact.unreadCount > 0 && (
+                          <span className="bg-emerald-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center ml-2 flex-shrink-0">
+                            {contact.unreadCount}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col bg-white dark:bg-gray-800">
-          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
-                  SJ
-                </div>
-                <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></div>
-              </div>
-              <div>
-                <p className="font-medium dark:text-white">Sarah Johnson</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Online</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                <Phone className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-              <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                <Video className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-              <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-gray-900">
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.sent ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-md ${msg.sent ? "order-2" : "order-1"}`}>
-                  <div
-                    className={`rounded-2xl px-4 py-2 ${
-                      msg.sent
-                        ? "bg-emerald-500 text-white rounded-br-none"
-                        : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-none"
-                    }`}
-                  >
-                    <p className="text-sm">{msg.text}</p>
+        {/* Chat Area */}
+        {selectedContact ? (
+          <div className="flex-1 flex flex-col bg-white dark:bg-gray-800">
+            {/* Chat Header */}
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
+                    {selectedContact.avatar}
                   </div>
-                  <p className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${msg.sent ? "text-right" : "text-left"}`}>
-                    {msg.time}
+                  {selectedContact.online && (
+                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-gray-800 rounded-full"></div>
+                  )}
+                </div>
+                <div>
+                  <p className="font-medium dark:text-white">{selectedContact.name}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {selectedContact.online ? "Online" : "Offline"}
                   </p>
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="flex items-center gap-2">
+                <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                  <Phone className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </button>
+                <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                  <Video className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </button>
+                <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                  <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </button>
+              </div>
+            </div>
 
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-2">
-              <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-              <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                <Paperclip className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-              <input
-                type="text"
-                placeholder="Type a message..."
-                className="flex-1 px-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              <button className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600">
-                <Send className="w-5 h-5" />
-              </button>
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-gray-900">
+              {messages.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                  <p>No messages yet. Start the conversation!</p>
+                </div>
+              ) : (
+                messages.map((msg) => (
+                  <div key={msg.id} className={`flex ${msg.sent ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-md ${msg.sent ? "order-2" : "order-1"}`}>
+                      {msg.mediaUrl && (
+                        <div className="mb-2">
+                          {msg.mediaType === "image" ? (
+                            <img
+                              src={msg.mediaUrl}
+                              alt="Shared media"
+                              className="rounded-lg max-w-full h-auto"
+                            />
+                          ) : (
+                            <div className="flex items-center gap-2 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                              <FileText className="w-5 h-5" />
+                              <span className="text-sm">Document</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div
+                        className={`rounded-2xl px-4 py-2 ${
+                          msg.sent
+                            ? "bg-emerald-500 text-white rounded-br-none"
+                            : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-none shadow-sm"
+                        }`}
+                      >
+                        <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                      </div>
+                      <div className={`flex items-center gap-1 mt-1 ${msg.sent ? "justify-end" : "justify-start"}`}>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        {msg.sent && (
+                          <span className="text-white">
+                            {getMessageStatusIcon(msg.status)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+              <div ref={messagesEndRef} />
             </div>
-          </div>
-        </div>
 
-        <div className="w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6">
-          <div className="text-center mb-6">
-            <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white text-2xl font-medium mx-auto mb-3">
-              SJ
-            </div>
-            <h3 className="font-semibold text-lg dark:text-white">Sarah Johnson</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Online</p>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Email</p>
-              <p className="text-sm dark:text-gray-200">sarah.johnson@email.com</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Phone</p>
-              <p className="text-sm dark:text-gray-200">+1 (555) 123-4567</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Tags</p>
-              <div className="flex gap-2">
-                <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full">VIP</span>
-                <span className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full">Customer</span>
+            {/* Message Input */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+              {mediaPreview && (
+                <div className="mb-2 relative inline-block">
+                  <img
+                    src={mediaPreview}
+                    alt="Preview"
+                    className="h-20 rounded-lg"
+                  />
+                  <button
+                    onClick={removeMedia}
+                    className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setShowTemplates(!showTemplates)}
+                  className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+                  title="Use template"
+                >
+                  <MessageSquare className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </button>
+                <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                  <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,.pdf,.doc,.docx"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+                >
+                  <Paperclip className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </button>
+                <input
+                  type="text"
+                  placeholder="Type a message..."
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+                  className="flex-1 px-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  disabled={sending}
+                />
+                <button 
+                  onClick={sendMessage}
+                  disabled={sending || (!messageInput.trim() && !mediaFile)}
+                  className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Send className="w-5 h-5" />
+                </button>
               </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800">
+            <div className="text-center text-gray-500 dark:text-gray-400">
+              <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              <p>Select a chat to start messaging</p>
+            </div>
+          </div>
+        )}
+
+        {/* Contact Info Panel */}
+        {selectedContact && (
+          <div className="w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6 overflow-y-auto">
+            <div className="text-center mb-6">
+              <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white text-2xl font-medium mx-auto mb-3">
+                {selectedContact.avatar}
+              </div>
+              <h3 className="font-semibold text-lg dark:text-white">{selectedContact.name}</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {selectedContact.online ? "Online" : "Offline"}
+              </p>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Email</p>
+                <p className="text-sm dark:text-gray-200">{selectedContact.email || "Not provided"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Phone</p>
+                <p className="text-sm dark:text-gray-200">{selectedContact.phone}</p>
+              </div>
+              {selectedContact.tags && selectedContact.tags.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Tags</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedContact.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 rounded-full"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       </div>
+      
+      {/* Template Modal */}
+      {selectedTemplate && (
+        <TemplateParameterModal
+          isOpen={!!selectedTemplate}
+          onClose={() => setSelectedTemplate(null)}
+          template={selectedTemplate}
+          onSend={sendTemplateMessage}
+        />
+      )}
     </div>
   );
 }
