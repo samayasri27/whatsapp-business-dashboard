@@ -49,7 +49,12 @@ app.add_middleware(
 )
 
 # Clerk configuration
-CLERK_PEM_PUBLIC_KEY = os.getenv("CLERK_PEM_PUBLIC_KEY", "")
+# Clerk configuration
+# Ensure the PEM key is correctly formatted by handling potential escaped newlines
+# and stripping any wrapping quotes if present
+raw_key = os.getenv("CLERK_PEM_PUBLIC_KEY", "")
+# Handle double-escaped newlines common in .env files
+CLERK_PEM_PUBLIC_KEY = raw_key.replace("\\n", "\n").replace('"', "").replace("'", "")
 CLERK_ISSUER = os.getenv("CLERK_ISSUER", "")
 
 # JWT configuration (for API-to-API or legacy systems)
@@ -69,7 +74,8 @@ def verify_clerk_token(token: str) -> Dict[str, Any]:
                 token,
                 CLERK_PEM_PUBLIC_KEY,
                 algorithms=["RS256"],
-                issuer=CLERK_ISSUER
+                issuer=CLERK_ISSUER,
+                options={"verify_signature": True, "verify_aud": False}
             )
             return {"type": "clerk", "user_id": payload.get("sub"), "data": payload}
         else:
@@ -81,12 +87,16 @@ def verify_clerk_token(token: str) -> Dict[str, Any]:
 def verify_jwt_token(token: str) -> Dict[str, Any]:
     """Verify standard JWT token"""
     try:
+        # Explicitly allow only HS256 algorithm for JWT tokens
         payload = jwt.decode(
             token,
             JWT_SECRET,
-            algorithms=[JWT_ALGORITHM]
+            algorithms=["HS256"],
+            options={"verify_signature": True, "verify_aud": False, "verify_exp": True}
         )
         return {"type": "jwt", "user_id": payload.get("sub"), "data": payload}
+    except JWTError as e:
+        raise Exception(f"JWT verification failed: {str(e)}")
     except Exception as e:
         raise Exception(f"JWT verification failed: {str(e)}")
 
@@ -113,23 +123,31 @@ async def verify_jwt_auth(authorization: Optional[str] = Header(None)) -> Dict[s
     
     token = authorization.replace("Bearer ", "")
     
-    # Verify JWT token
+    # 1. Try verifying as internal JWT (HS256)
     try:
         result = verify_jwt_token(token)
         print(f"✅ JWT token verified: {result['user_id']}")
         return result
-    except Exception as jwt_error:
-        print(f"⚠️ JWT verification failed: {jwt_error}")
+    except Exception:
+        pass  # Fall through to try Clerk
+
+    # 2. Try verifying as Clerk token (RS256)
+    try:
+        result = verify_clerk_token(token)
+        print(f"✅ Clerk token verified: {result['user_id']}")
+        return result
+    except Exception as e:
+        print(f"⚠️ Auth failed: {e}")
         
-        # If DEBUG mode, allow anyway
-        if DEBUG:
-            print("⚠️ DEBUG mode: Allowing request without valid token")
-            return {"type": "debug", "user_id": "default_user", "data": {"debug": True}}
-        
-        raise HTTPException(
-            status_code=401,
-            detail=f"Invalid JWT token: {jwt_error}"
-        )
+    # 3. Debug mode fallthrough or failure
+    if DEBUG:
+        print("⚠️ DEBUG mode: Allowing request without valid token")
+        return {"type": "debug", "user_id": "default_user", "data": {"debug": True}}
+    
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid authentication credentials"
+    )
 
 
 def create_jwt_token(user_id: str, additional_data: Dict[str, Any] = None) -> str:

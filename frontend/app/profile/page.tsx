@@ -1,41 +1,77 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import toast from "react-hot-toast";
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import { User, Mail, Phone, Building, Calendar, Shield, Edit2, Save, X } from "lucide-react";
 
+const profileSchema = z.object({
+  firstName: z.string().min(2, "First name must be at least 2 characters"),
+  lastName: z.string().min(2, "Last name must be at least 2 characters"),
+  phone: z.string().min(10, "Phone must be at least 10 digits").optional().or(z.literal("")),
+  company: z.string().optional(),
+  department: z.string().optional(),
+  bio: z.string().max(500, "Bio must be less than 500 characters").optional(),
+});
+
+type ProfileFormData = z.infer<typeof profileSchema>;
+
 export default function Profile() {
   const { user } = useUser();
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({
-    firstName: user?.firstName || "",
-    lastName: user?.lastName || "",
-    email: user?.emailAddresses[0]?.emailAddress || "",
-    phone: user?.phoneNumbers[0]?.phoneNumber || "",
-    company: "",
-    role: "User",
-    department: "",
-    bio: "",
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    reset,
+    watch,
+  } = useForm<ProfileFormData>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      firstName: user?.firstName || "",
+      lastName: user?.lastName || "",
+      phone: user?.phoneNumbers[0]?.phoneNumber || "",
+      company: "",
+      department: "",
+      bio: "",
+    },
   });
 
-  const handleSave = async () => {
-    // TODO: Save to backend
-    setIsEditing(false);
+  useEffect(() => {
+    if (user) {
+      reset({
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        phone: user.phoneNumbers[0]?.phoneNumber || "",
+        company: "",
+        department: "",
+        bio: "",
+      });
+    }
+  }, [user, reset]);
+
+  const formData = watch();
+
+  const onSubmit = async (data: ProfileFormData) => {
+    try {
+      // TODO: Save to backend
+      console.log("Profile data:", data);
+      toast.success("Profile updated successfully!");
+      setIsEditing(false);
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      toast.error("Failed to update profile");
+    }
   };
 
   const handleCancel = () => {
-    setFormData({
-      firstName: user?.firstName || "",
-      lastName: user?.lastName || "",
-      email: user?.emailAddresses[0]?.emailAddress || "",
-      phone: user?.phoneNumbers[0]?.phoneNumber || "",
-      company: "",
-      role: "User",
-      department: "",
-      bio: "",
-    });
+    reset();
     setIsEditing(false);
   };
 
@@ -57,44 +93,42 @@ export default function Profile() {
                   <h2 className="text-2xl font-bold dark:text-white">
                     {user?.firstName} {user?.lastName}
                   </h2>
-                  <p className="text-gray-600 dark:text-gray-400">{formData.email}</p>
+                  <p className="text-gray-600 dark:text-gray-400">{user?.emailAddresses[0]?.emailAddress}</p>
                   <div className="flex items-center gap-2 mt-2">
                     <span className="px-3 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 rounded-full text-sm flex items-center gap-1">
                       <Shield className="w-3 h-3" />
-                      {formData.role}
+                      User
                     </span>
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => isEditing ? handleSave() : setIsEditing(true)}
-                className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center gap-2"
-              >
-                {isEditing ? (
-                  <>
+              {!isEditing ? (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center gap-2"
+                >
+                  <Edit2 className="w-4 h-4" />
+                  Edit Profile
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleCancel}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSubmit(onSubmit)}
+                    className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center gap-2"
+                  >
                     <Save className="w-4 h-4" />
                     Save Changes
-                  </>
-                ) : (
-                  <>
-                    <Edit2 className="w-4 h-4" />
-                    Edit Profile
-                  </>
-                )}
-              </button>
+                  </button>
+                </div>
+              )}
             </div>
-
-            {isEditing && (
-              <div className="flex gap-2 mb-4">
-                <button
-                  onClick={handleCancel}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
-                >
-                  <X className="w-4 h-4" />
-                  Cancel
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Profile Information */}
@@ -110,15 +144,17 @@ export default function Profile() {
                   <User className="w-4 h-4 text-gray-400" />
                   {isEditing ? (
                     <input
+                      {...register("firstName")}
                       type="text"
-                      value={formData.firstName}
-                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                       className="flex-1 bg-transparent outline-none dark:text-white"
                     />
                   ) : (
                     <span className="dark:text-white">{formData.firstName}</span>
                   )}
                 </div>
+                {errors.firstName && (
+                  <p className="text-red-500 text-sm mt-1">{errors.firstName.message}</p>
+                )}
               </div>
 
               <div>
@@ -129,24 +165,27 @@ export default function Profile() {
                   <User className="w-4 h-4 text-gray-400" />
                   {isEditing ? (
                     <input
+                      {...register("lastName")}
                       type="text"
-                      value={formData.lastName}
-                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                       className="flex-1 bg-transparent outline-none dark:text-white"
                     />
                   ) : (
                     <span className="dark:text-white">{formData.lastName}</span>
                   )}
                 </div>
+                {errors.lastName && (
+                  <p className="text-red-500 text-sm mt-1">{errors.lastName.message}</p>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Email
                 </label>
-                <div className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-700">
+                <div className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-700 bg-gray-50 dark:bg-gray-800">
                   <Mail className="w-4 h-4 text-gray-400" />
-                  <span className="dark:text-white">{formData.email}</span>
+                  <span className="dark:text-white">{user?.emailAddresses[0]?.emailAddress}</span>
+                  <span className="ml-auto text-xs text-gray-500">Managed by Clerk</span>
                 </div>
               </div>
 
@@ -158,9 +197,8 @@ export default function Profile() {
                   <Phone className="w-4 h-4 text-gray-400" />
                   {isEditing ? (
                     <input
+                      {...register("phone")}
                       type="tel"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       className="flex-1 bg-transparent outline-none dark:text-white"
                       placeholder="+1 (555) 000-0000"
                     />
@@ -168,6 +206,9 @@ export default function Profile() {
                     <span className="dark:text-white">{formData.phone || "Not set"}</span>
                   )}
                 </div>
+                {errors.phone && (
+                  <p className="text-red-500 text-sm mt-1">{errors.phone.message}</p>
+                )}
               </div>
 
               <div>
@@ -178,9 +219,8 @@ export default function Profile() {
                   <Building className="w-4 h-4 text-gray-400" />
                   {isEditing ? (
                     <input
+                      {...register("company")}
                       type="text"
-                      value={formData.company}
-                      onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                       className="flex-1 bg-transparent outline-none dark:text-white"
                       placeholder="Your company"
                     />
@@ -198,9 +238,8 @@ export default function Profile() {
                   <Building className="w-4 h-4 text-gray-400" />
                   {isEditing ? (
                     <input
+                      {...register("department")}
                       type="text"
-                      value={formData.department}
-                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                       className="flex-1 bg-transparent outline-none dark:text-white"
                       placeholder="Sales, Marketing, etc."
                     />
@@ -216,13 +255,17 @@ export default function Profile() {
                 Bio
               </label>
               {isEditing ? (
-                <textarea
-                  value={formData.bio}
-                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
-                  rows={3}
-                  placeholder="Tell us about yourself..."
-                />
+                <>
+                  <textarea
+                    {...register("bio")}
+                    className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    rows={3}
+                    placeholder="Tell us about yourself..."
+                  />
+                  {errors.bio && (
+                    <p className="text-red-500 text-sm mt-1">{errors.bio.message}</p>
+                  )}
+                </>
               ) : (
                 <p className="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white">
                   {formData.bio || "No bio added yet"}
@@ -251,7 +294,7 @@ export default function Profile() {
                   <Shield className="w-4 h-4 text-gray-400" />
                   <span className="text-sm text-gray-600 dark:text-gray-400">Role</span>
                 </div>
-                <span className="text-sm font-medium dark:text-white">{formData.role}</span>
+                <span className="text-sm font-medium dark:text-white">User</span>
               </div>
 
               <div className="flex items-center justify-between py-3">

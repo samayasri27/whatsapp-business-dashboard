@@ -63,7 +63,7 @@ export default function Chat() {
   // Format timestamp to relative time
   const formatTimestamp = (timestamp: string) => {
     if (!timestamp) return "Now";
-    
+
     const date = new Date(timestamp);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -75,7 +75,7 @@ export default function Chat() {
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
-    
+
     // Format as date for older messages
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
@@ -88,7 +88,7 @@ export default function Chat() {
 
   // Fetch messages when contact is selected
   useEffect(() => {
-    if (selectedContact) {
+    if (selectedContact?.phone) {
       fetchMessages(selectedContact.phone);
       // Set up polling for real-time updates
       const interval = setInterval(() => {
@@ -115,7 +115,7 @@ export default function Chat() {
           Authorization: `Bearer ${token}`,
         },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setContacts(data);
@@ -134,12 +134,17 @@ export default function Chat() {
   const fetchMessages = async (phoneNumber: string) => {
     try {
       const token = await getToken();
+      if (!token) {
+        console.warn("No auth token available");
+        return;
+      }
+
       const response = await fetch(`http://localhost:8000/chats/${encodeURIComponent(phoneNumber)}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setMessages(data.messages || []);
@@ -157,7 +162,7 @@ export default function Chat() {
           Authorization: `Bearer ${token}`,
         },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setTemplates(data);
@@ -172,7 +177,7 @@ export default function Chat() {
 
     setSending(true);
     const tempId = Date.now().toString();
-    
+
     // Optimistic update
     const newMessage: Message = {
       id: tempId,
@@ -184,7 +189,7 @@ export default function Chat() {
       mediaUrl: mediaPreview || undefined,
       mediaType: mediaFile?.type.startsWith("image/") ? "image" : "document",
     };
-    
+
     setMessages([...messages, newMessage]);
     setMessageInput("");
     setMediaFile(null);
@@ -215,7 +220,7 @@ export default function Chat() {
           )
         );
         toast.success("Message sent!");
-        
+
         // Simulate delivery and read status updates
         setTimeout(() => {
           setMessages((prev) =>
@@ -224,7 +229,7 @@ export default function Chat() {
             )
           );
         }, 2000);
-        
+
         setTimeout(() => {
           setMessages((prev) =>
             prev.map((msg) =>
@@ -280,7 +285,7 @@ export default function Chat() {
 
   const sendTemplateMessage = async (filledMessage: string) => {
     if (!selectedContact) return;
-    
+
     setMessageInput(filledMessage);
     setSelectedTemplate(null);
     // Auto-send after a brief delay
@@ -330,296 +335,294 @@ export default function Chat() {
       <Sidebar />
       <div className="flex-1 overflow-auto">
         <Header title="Messages" subtitle="Welcome back! Here's what's happening" />
-      
-      <div className="flex h-[calc(100vh-80px)]">
-        {/* Contacts List */}
-        <div className="w-96 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-2 mb-4">
-              <h2 className="text-lg font-semibold flex-1 dark:text-white">Chats</h2>
-              <button 
-                onClick={() => setShowTemplates(!showTemplates)}
-                className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-                title="Templates"
-              >
-                <MessageSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              </button>
-              <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                <Plus className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              </button>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search chats..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-          </div>
-          
-          {/* Templates Panel */}
-          {showTemplates && (
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-emerald-50 dark:bg-emerald-900/20">
-              <h3 className="text-sm font-semibold mb-2 dark:text-white">Quick Templates</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {templates.slice(0, 5).map((template) => (
-                  <button
-                    key={template.id}
-                    onClick={() => handleTemplateSelect(template)}
-                    className="w-full text-left p-2 rounded-lg hover:bg-white dark:hover:bg-gray-700 text-sm"
-                  >
-                    <p className="font-medium dark:text-white">{template.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{template.content}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          <div className="flex-1 overflow-y-auto">
-            {filteredContacts.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                <p>No contacts found</p>
-              </div>
-            ) : (
-              filteredContacts.map((contact) => (
-                <div
-                  key={contact.id}
-                  onClick={() => setSelectedContact(contact)}
-                  className={`p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors ${
-                    selectedContact?.id === contact.id ? "bg-emerald-50 dark:bg-emerald-900/20" : ""
-                  }`}
+
+        <div className="flex h-[calc(100vh-80px)]">
+          {/* Contacts List */}
+          <div className="w-96 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-lg font-semibold flex-1 dark:text-white">Chats</h2>
+                <button
+                  onClick={() => setShowTemplates(!showTemplates)}
+                  className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+                  title="Templates"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
-                        {contact.avatar}
-                      </div>
-                      {contact.online && (
-                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-gray-800 rounded-full"></div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="font-medium text-gray-900 dark:text-white truncate">{contact.name}</p>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{formatTimestamp(contact.lastMessageTime || "")}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{contact.lastMessage || "No messages yet"}</p>
-                        {contact.unreadCount && contact.unreadCount > 0 && (
-                          <span className="bg-emerald-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center ml-2 flex-shrink-0">
-                            {contact.unreadCount}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Chat Area */}
-        {selectedContact ? (
-          <div className="flex-1 flex flex-col bg-white dark:bg-gray-800">
-            {/* Chat Header */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
-                    {selectedContact.avatar}
-                  </div>
-                  {selectedContact.online && (
-                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-gray-800 rounded-full"></div>
-                  )}
-                </div>
-                <div>
-                  <p className="font-medium dark:text-white">{selectedContact.name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {selectedContact.online ? "Online" : "Offline"}
-                  </p>
-                </div>
+                  <MessageSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                </button>
+                <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                  <Plus className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                </button>
               </div>
-              <div className="flex items-center gap-2">
-                <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                  <Phone className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                </button>
-                <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                  <Video className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                </button>
-                <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                  <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                </button>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search chats..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
               </div>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-gray-900">
-              {messages.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-                  <p>No messages yet. Start the conversation!</p>
+            {/* Templates Panel */}
+            {showTemplates && (
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-emerald-50 dark:bg-emerald-900/20">
+                <h3 className="text-sm font-semibold mb-2 dark:text-white">Quick Templates</h3>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {templates.slice(0, 5).map((template) => (
+                    <button
+                      key={template.id}
+                      onClick={() => handleTemplateSelect(template)}
+                      className="w-full text-left p-2 rounded-lg hover:bg-white dark:hover:bg-gray-700 text-sm"
+                    >
+                      <p className="font-medium dark:text-white">{template.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{template.content}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto">
+              {filteredContacts.length === 0 ? (
+                <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                  <p>No contacts found</p>
                 </div>
               ) : (
-                messages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.sent ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-md ${msg.sent ? "order-2" : "order-1"}`}>
-                      {msg.mediaUrl && (
-                        <div className="mb-2">
-                          {msg.mediaType === "image" ? (
-                            <img
-                              src={msg.mediaUrl}
-                              alt="Shared media"
-                              className="rounded-lg max-w-full h-auto"
-                            />
-                          ) : (
-                            <div className="flex items-center gap-2 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                              <FileText className="w-5 h-5" />
-                              <span className="text-sm">Document</span>
-                            </div>
+                filteredContacts.map((contact) => (
+                  <div
+                    key={contact.id}
+                    onClick={() => setSelectedContact(contact)}
+                    className={`p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors ${selectedContact?.id === contact.id ? "bg-emerald-50 dark:bg-emerald-900/20" : ""
+                      }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
+                          {contact.avatar}
+                        </div>
+                        {contact.online && (
+                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-gray-800 rounded-full"></div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="font-medium text-gray-900 dark:text-white truncate">{contact.name}</p>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">{formatTimestamp(contact.lastMessageTime || "")}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{contact.lastMessage || "No messages yet"}</p>
+                          {contact.unreadCount && contact.unreadCount > 0 && (
+                            <span className="bg-emerald-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center ml-2 flex-shrink-0">
+                              {contact.unreadCount}
+                            </span>
                           )}
                         </div>
-                      )}
-                      <div
-                        className={`rounded-2xl px-4 py-2 ${
-                          msg.sent
-                            ? "bg-emerald-500 text-white rounded-br-none"
-                            : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-none shadow-sm"
-                        }`}
-                      >
-                        <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
-                      </div>
-                      <div className={`flex items-center gap-1 mt-1 ${msg.sent ? "justify-end" : "justify-start"}`}>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                        {msg.sent && (
-                          <span className="text-white">
-                            {getMessageStatusIcon(msg.status)}
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>
                 ))
               )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Message Input */}
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-              {mediaPreview && (
-                <div className="mb-2 relative inline-block">
-                  <img
-                    src={mediaPreview}
-                    alt="Preview"
-                    className="h-20 rounded-lg"
-                  />
-                  <button
-                    onClick={removeMedia}
-                    className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => setShowTemplates(!showTemplates)}
-                  className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-                  title="Use template"
-                >
-                  <MessageSquare className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                </button>
-                <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
-                  <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,.pdf,.doc,.docx"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-                >
-                  <Paperclip className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                </button>
-                <input
-                  type="text"
-                  placeholder="Type a message..."
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
-                  className="flex-1 px-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  disabled={sending}
-                />
-                <button 
-                  onClick={sendMessage}
-                  disabled={sending || (!messageInput.trim() && !mediaFile)}
-                  className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send className="w-5 h-5" />
-                </button>
-              </div>
             </div>
           </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800">
-            <div className="text-center text-gray-500 dark:text-gray-400">
-              <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p>Select a chat to start messaging</p>
-            </div>
-          </div>
-        )}
 
-        {/* Contact Info Panel */}
-        {selectedContact && (
-          <div className="w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6 overflow-y-auto">
-            <div className="text-center mb-6">
-              <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white text-2xl font-medium mx-auto mb-3">
-                {selectedContact.avatar}
-              </div>
-              <h3 className="font-semibold text-lg dark:text-white">{selectedContact.name}</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {selectedContact.online ? "Online" : "Offline"}
-              </p>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Email</p>
-                <p className="text-sm dark:text-gray-200">{selectedContact.email || "Not provided"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Phone</p>
-                <p className="text-sm dark:text-gray-200">{selectedContact.phone}</p>
-              </div>
-              {selectedContact.tags && selectedContact.tags.length > 0 && (
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Tags</p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedContact.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 rounded-full"
-                      >
-                        {tag}
-                      </span>
-                    ))}
+          {/* Chat Area */}
+          {selectedContact ? (
+            <div className="flex-1 flex flex-col bg-white dark:bg-gray-800">
+              {/* Chat Header */}
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
+                      {selectedContact.avatar}
+                    </div>
+                    {selectedContact.online && (
+                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-gray-800 rounded-full"></div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-medium dark:text-white">{selectedContact.name}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {selectedContact.online ? "Online" : "Offline"}
+                    </p>
                   </div>
                 </div>
-              )}
+                <div className="flex items-center gap-2">
+                  <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                    <Phone className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                  <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                    <Video className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                  <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                    <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-gray-900">
+                {messages.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                    <p>No messages yet. Start the conversation!</p>
+                  </div>
+                ) : (
+                  messages.map((msg) => (
+                    <div key={msg.id} className={`flex ${msg.sent ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-md ${msg.sent ? "order-2" : "order-1"}`}>
+                        {msg.mediaUrl && (
+                          <div className="mb-2">
+                            {msg.mediaType === "image" ? (
+                              <img
+                                src={msg.mediaUrl}
+                                alt="Shared media"
+                                className="rounded-lg max-w-full h-auto"
+                              />
+                            ) : (
+                              <div className="flex items-center gap-2 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                <FileText className="w-5 h-5" />
+                                <span className="text-sm">Document</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div
+                          className={`rounded-2xl px-4 py-2 ${msg.sent
+                              ? "bg-emerald-500 text-white rounded-br-none"
+                              : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-none shadow-sm"
+                            }`}
+                        >
+                          <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                        </div>
+                        <div className={`flex items-center gap-1 mt-1 ${msg.sent ? "justify-end" : "justify-start"}`}>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          {msg.sent && (
+                            <span className="text-white">
+                              {getMessageStatusIcon(msg.status)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Message Input */}
+              <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                {mediaPreview && (
+                  <div className="mb-2 relative inline-block">
+                    <img
+                      src={mediaPreview}
+                      alt="Preview"
+                      className="h-20 rounded-lg"
+                    />
+                    <button
+                      onClick={removeMedia}
+                      className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowTemplates(!showTemplates)}
+                    className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+                    title="Use template"
+                  >
+                    <MessageSquare className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                  <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                    <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,.pdf,.doc,.docx"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+                  >
+                    <Paperclip className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                  <input
+                    type="text"
+                    placeholder="Type a message..."
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+                    className="flex-1 px-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    disabled={sending}
+                  />
+                  <button
+                    onClick={sendMessage}
+                    disabled={sending || (!messageInput.trim() && !mediaFile)}
+                    className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800">
+              <div className="text-center text-gray-500 dark:text-gray-400">
+                <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <p>Select a chat to start messaging</p>
+              </div>
+            </div>
+          )}
+
+          {/* Contact Info Panel */}
+          {selectedContact && (
+            <div className="w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6 overflow-y-auto">
+              <div className="text-center mb-6">
+                <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white text-2xl font-medium mx-auto mb-3">
+                  {selectedContact.avatar}
+                </div>
+                <h3 className="font-semibold text-lg dark:text-white">{selectedContact.name}</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {selectedContact.online ? "Online" : "Offline"}
+                </p>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Email</p>
+                  <p className="text-sm dark:text-gray-200">{selectedContact.email || "Not provided"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Phone</p>
+                  <p className="text-sm dark:text-gray-200">{selectedContact.phone}</p>
+                </div>
+                {selectedContact.tags && selectedContact.tags.length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Tags</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedContact.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 rounded-full"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-      </div>
-      
+
       {/* Template Modal */}
       {selectedTemplate && (
         <TemplateParameterModal

@@ -3,6 +3,7 @@ from pymongo.errors import ConnectionFailure
 from typing import Optional
 import os
 from dotenv import load_dotenv
+import certifi
 
 load_dotenv()
 
@@ -15,23 +16,26 @@ class Database:
         mongodb_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
         
         try:
-            # For MongoDB Atlas, we need to handle SSL properly
+            # Use certifi for proper SSL certificate verification on macOS
             cls.client = MongoClient(
                 mongodb_url,
-                serverSelectionTimeoutMS=5000,  # 5 second timeout
+                serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=5000,
-                tlsAllowInvalidCertificates=True  # For development - allows self-signed certs
+                tls=True,
+                tlsCAFile=certifi.where(),
+                uuidRepresentation='standard'
             )
-            # Test connection
+            
+            # Verify connection
             cls.client.admin.command('ping')
-            print(f"✅ Connected to MongoDB at {mongodb_url}")
-        except ConnectionFailure as e:
-            print(f"❌ Failed to connect to MongoDB: {e}")
-            print("⚠️  Running without MongoDB - using in-memory data")
-            cls.client = None
+            print(f"✅ Connected to MongoDB")
+            
         except Exception as e:
-            print(f"❌ MongoDB connection error: {e}")
-            cls.client = None
+            print(f"⚠️  MongoDB connection failed: {e}")
+            print(f"⚠️  Switching to MOCK DATABASE (In-Memory)")
+            
+            from mock_db import MockClient
+            cls.client = MockClient()
     
     @classmethod
     def close(cls):
@@ -46,9 +50,7 @@ class Database:
         if not cls.client:
             cls.connect()
         
-        if not cls.client:
-            # Return None if connection failed
-            return None
+        # NOTE: cls.client might be MockClient, which behaves like MongoClient
         
         db_name = os.getenv("MONGODB_DB_NAME", "whatsapp_business")
         return cls.client[db_name]
@@ -58,36 +60,16 @@ class Database:
         """Check if MongoDB is connected"""
         return cls.client is not None
 
-# Database collections with error handling
-def get_contacts_collection():
+# Collection accessors
+def get_collection(name: str):
     db = Database.get_database()
-    if db is None:
-        return None
-    return db["contacts"]
+    return db[name] if db is not None else None
 
-def get_messages_collection():
-    db = Database.get_database()
-    if db is None:
-        return None
-    return db["messages"]
-
-def get_campaigns_collection():
-    db = Database.get_database()
-    if db is None:
-        return None
-    return db["campaigns"]
-
-def get_templates_collection():
-    db = Database.get_database()
-    if db is None:
-        return None
-    return db["templates"]
-
-def get_users_collection():
-    db = Database.get_database()
-    if db is None:
-        return None
-    return db["users"]
+def get_contacts_collection(): return get_collection("contacts")
+def get_messages_collection(): return get_collection("messages")
+def get_campaigns_collection(): return get_collection("campaigns")
+def get_templates_collection(): return get_collection("templates")
+def get_users_collection(): return get_collection("users")
 
 # Initialize connection on import
 Database.connect()
