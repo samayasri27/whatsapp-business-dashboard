@@ -1,3 +1,4 @@
+
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
@@ -107,3 +108,30 @@ class User(BaseModel):
     email: str
     role: str = "user"
     createdAt: datetime = Field(default_factory=datetime.now)
+
+# AI Agent Models
+class AgentConfig(BaseModel):
+    enabled: bool
+    rules: List[str] = []
+    prompts: Optional[List[str]] = None
+    keywords: Optional[List[str]] = None
+
+class Agent(BaseModel):
+    id: str
+    name: str
+    type: str  # 'auto-reply' | 'lead-qual' | 'sentiment'
+    description: str
+    icon: str
+    status: str
+    config: AgentConfig
+
+class AIProcessRequest(BaseModel):
+    message: str
+    contactId: str
+    activeAgents: List[Agent]
+
+class AIProcessResponse(BaseModel):
+    reply: Optional[str] = None
+    tags: Optional[List[str]] = None
+    sentiment: Optional[str] = None
+    logs: List[dict] = []

@@ -4,7 +4,7 @@ import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
 import { Search, Plus, Phone, Video, MoreVertical, Smile, Paperclip, Send, Check, CheckCheck, Image as ImageIcon, FileText, X, MessageSquare } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import toast from "react-hot-toast";
 import TemplateParameterModal from "@/components/TemplateParameterModal";
 
@@ -45,6 +45,7 @@ interface Template {
 
 export default function Chat() {
   const { getToken } = useAuth();
+  const { user } = useUser();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -110,7 +111,7 @@ export default function Chat() {
   const fetchContacts = async () => {
     try {
       const token = await getToken();
-      const response = await fetch(`http://localhost:8000/users?login_user=default_user`, {
+      const response = await fetch(`http://localhost:8000/users?login_user=${user?.id || 'default_user'}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -489,8 +490,8 @@ export default function Chat() {
                         )}
                         <div
                           className={`rounded-2xl px-4 py-2 ${msg.sent
-                              ? "bg-emerald-500 text-white rounded-br-none"
-                              : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-none shadow-sm"
+                            ? "bg-emerald-500 text-white rounded-br-none"
+                            : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-none shadow-sm"
                             }`}
                         >
                           <p className="text-sm whitespace-pre-wrap">{msg.text}</p>

@@ -28,7 +28,7 @@ def mongo_to_dict(doc: Dict) -> Dict:
             elif isinstance(value, dict):
                 result[key] = mongo_to_dict(value)
             elif isinstance(value, list):
-                result[key] = [mongo_to_dict(item) if isinstance(item, dict) else item for item in value]
+                result[key] = [mongo_to_dict(item) if isinstance(item, dict) else str(item) if isinstance(item, ObjectId) else item for item in value]
             else:
                 result[key] = value
         return result
@@ -1548,6 +1548,437 @@ async def update_user_settings(settings_data: dict, user: Dict[str, Any] = Depen
     """Update user settings"""
     # TODO: Implement settings storage
     return {"success": True, "message": "Settings updated"}
+
+@app.post("/api/ai/process")
+async def process_ai_request(
+    request: dict,
+    user: Dict[str, Any] = Depends(verify_jwt_auth)
+):
+    """
+    Process a message through active AI Agents using Groq API.
+    Supports dynamic tasks: Database updates, Contact mutations, Notes.
+    """
+    try:
+        message = request.get("message", "")
+        contact_id = request.get("contactId", "")
+        active_agents = request.get("activeAgents", [])
+        
+        # Use the reusable pipeline
+        results = await run_ai_pipeline(message, contact_id, active_agents, user["user_id"])
+        
+        return mongo_to_dict(results)
+
+    except Exception as e:
+        print(f"Error in AI processing: {e}")
+        raise HTTPException(status_code=500, detail=f"AI processing failed: {str(e)}")
+
+async def run_ai_pipeline(message: str, contact_id: str, active_agents: list, user_id: str):
+    """
+    Reusable AI pipeline logic
+    """
+    from datetime import datetime
+    from database import get_agent_logs_collection, get_contacts_collection
+    import json
+    import os
+    
+    # Initialize Groq Client
+    try:
+        from groq import Groq
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        client = Groq(api_key=groq_api_key) if groq_api_key else None
+    except ImportError:
+        client = None
+
+    results = {
+        "reply": None,
+        "tags": [],
+        "sentiment": None,
+        "logs": []
+    }
+    
+    logs_collection = get_agent_logs_collection()
+    contacts_collection = get_contacts_collection()
+
+    async def process_single_agent(agent):
+        if not client: return None
+        
+        config = agent.get("config", {})
+        system_prompt = config.get("systemPrompt", "")
+        if not system_prompt: return None
+        
+        # Enrich system prompt
+        enriched_prompt = f"""{system_prompt}
+        
+        IMPORTANT: You are an autonomous agent. Return a valid JSON object.
+        
+        Available capabilities (return in JSON key "actions"):
+        1. "update_contact": {{ "field": "email" | "name" | "status" | "notes", "value": "..." }}
+        2. "add_tag": {{ "tag": "..." }}
+        
+        Response Format:
+        {{
+            "reply": "string (optional user response)",
+            "sentiment": "string (optional)",
+            "actions": [
+                {{ "type": "update_contact", "field": "status", "value": "qualified" }},
+                {{ "type": "add_tag", "tag": "Urgent" }}
+            ]
+        }}
+        
+        If no action is needed, return empty JSON {{}}.
+        """
+        
+        try:
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": enriched_prompt},
+                    {"role": "user", "content": f"User message: {message}"}
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            content = chat_completion.choices[0].message.content
+            return json.loads(content)
+        except Exception as e:
+            print(f"Agent {agent.get('name')} failed: {e}")
+            return None
+
+    # Iterate through active agents
+    for agent in active_agents:
+        if agent.get("status") != "active": continue
+            
+        response = await process_single_agent(agent)
+        
+        if response:
+            # 1. Handle ACTIONS
+            actions = response.get("actions", [])
+            
+            # Support legacy flat format
+            if response.get("tags") and isinstance(response.get("tags"), list):
+                 for t in response.get("tags"):
+                     actions.append({"type": "add_tag", "tag": t})
+
+            for action in actions:
+                action_type = action.get("type")
+                
+                if action_type == "add_tag":
+                    tag = action.get("tag")
+                    if tag:
+                        results["tags"].append(tag)
+                        log_entry = {
+                            "id": str(datetime.now().timestamp()),
+                            "agentId": agent["id"],
+                            "contactId": contact_id,
+                            "action": "Applied Tag",
+                            "details": f"Added tag: {tag}",
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        results["logs"].append(log_entry)
+                        if logs_collection is not None: logs_collection.insert_one(log_entry)
+
+                elif action_type == "update_contact":
+                    field = action.get("field")
+                    value = action.get("value")
+                    if field and value and contact_id and contacts_collection is not None:
+                        # DB Update
+                        if field in ["name", "email", "status", "notes"]:
+                            contacts_collection.update_one(
+                                {"id": contact_id},
+                                {"$set": {field: value}}
+                            )
+                        
+                        log_entry = {
+                            "id": str(datetime.now().timestamp()),
+                            "agentId": agent["id"],
+                            "contactId": contact_id,
+                            "action": "Updated Contact",
+                            "details": f"Set {field} to '{value}'",
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        results["logs"].append(log_entry)
+                        if logs_collection is not None: logs_collection.insert_one(log_entry)
+
+            # 2. Handle Reply & Sentiment
+            if response.get("reply") and not results["reply"]:
+                results["reply"] = response.get("reply")
+                log_entry = {
+                    "id": str(datetime.now().timestamp()),
+                    "agentId": agent["id"],
+                    "contactId": contact_id,
+                    "action": "Auto-Replied",
+                    "details": f"\"{results['reply'][:50]}...\"",
+                    "timestamp": datetime.now().isoformat()
+                }
+                results["logs"].append(log_entry)
+                if logs_collection is not None: logs_collection.insert_one(log_entry)
+                
+            if response.get("sentiment"):
+                results["sentiment"] = response.get("sentiment")
+
+    # Deduplicate tags
+    results["tags"] = list(set(results["tags"]))
+    
+    return results
+
+@app.post("/webhooks/inbound")
+async def inbound_webhook(data: dict):
+    """
+    Simulate inbound WhatsApp message
+    """
+    from database import get_messages_collection, get_contacts_collection, get_agents_collection
+    from datetime import datetime
+    import uuid
+    
+    try:
+        phone = data.get("from")
+        text = data.get("text")
+        
+        if not phone or not text:
+            raise HTTPException(status_code=400, detail="from and text are required")
+            
+        contacts_collection = get_contacts_collection()
+        messages_collection = get_messages_collection()
+        agents_collection = get_agents_collection()
+        
+        # 1. Find or Create Contact
+        contact = contacts_collection.find_one({"phone": phone})
+        if not contact:
+            # Create new contact
+            # We need a user_id. For simulation, pick the first user or a demo user.
+            # In real system, phone numbers are associated with a business account.
+            # We'll use a hardcoded fallback to the active user seen in logs
+            # This ensures the data appears in your specific dashboard
+            user_id = "user_36IiebBm05vnLWSl4eoiBiPKZlr" 
+            
+            contact_id = str(uuid.uuid4())
+            new_contact = {
+                "id": contact_id,
+                "user_id": user_id,
+                "name": "New Lead " + phone[-4:],
+                "phone": phone,
+                "status": "New",
+                "tags": [],
+                "createdAt": datetime.now().isoformat()
+            }
+            contacts_collection.insert_one(new_contact)
+            contact = new_contact
+
+        # 2. Save User Message
+        user_message = {
+            "id": str(uuid.uuid4()),
+            "phoneNumber": phone,
+            "text": text,
+            "timestamp": datetime.now().isoformat(),
+            "sent": False, # Inbound
+            "status": "read",
+            "type": "text"
+        }
+        messages_collection.insert_one(user_message)
+        
+        # 3. Run Agents
+        # Fetch active agents for this user
+        active_agents = list(agents_collection.find({"user_id": user_id, "status": "active"}))
+        active_agents = [mongo_to_dict(a) for a in active_agents]
+        
+        ai_results = await run_ai_pipeline(text, contact_id, active_agents, user_id)
+        
+        # 4. Save AI Reply (if any)
+        if ai_results.get("reply"):
+            reply_message = {
+                "id": str(uuid.uuid4()),
+                "phoneNumber": phone,
+                "text": ai_results.get("reply"),
+                "timestamp": datetime.now().isoformat(),
+                "sent": True, # Outbound reply
+                "status": "sent",
+                "type": "text",
+                "agent_reply": True
+            }
+            messages_collection.insert_one(reply_message)
+            
+        # 5. Apply tags to contact
+        if ai_results.get("tags"):
+            contacts_collection.update_one(
+                {"id": contact_id},
+                {"$addToSet": {"tags": {"$each": ai_results.get("tags")}}}
+            )
+            
+        return {"success": True, "ai_results": mongo_to_dict(ai_results)}
+        
+    except Exception as e:
+        print(f"Error in webhook: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/agents")
+async def get_agents(user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Get all AI agents"""
+    from database import get_agents_collection
+    
+    try:
+        agents_collection = get_agents_collection()
+        if agents_collection is None:
+            return [] # or return default agents
+        
+        # return list(agents_collection.find({"user_id": user["user_id"]}))
+        # For simplicity in this demo, we might return global agents or user specific.
+        # Let's assume user specific.
+        agents = list(agents_collection.find({"user_id": user["user_id"]}))
+        if not agents:
+            # Seed default agents if none exist
+            default_agents = [
+                {
+                    "id": "1",
+                    "user_id": user["user_id"],
+                    "name": "Customer Support Evaluator",
+                    "type": "auto-reply",
+                    "description": "Evaluates incoming messages to decide if an automated FAQ response is appropriate.",
+                    "icon": "MessageSquareQuote",
+                    "status": "active",
+                    "metrics": [
+                        { "label": "Avg Response Time", "value": "Instant" }
+                    ],
+                    "config": {
+                        "enabled": True,
+                        "systemPrompt": """You are an intelligent customer support triage agent. 
+                        Your goal is to handle common queries automatically.
+                        
+                        Rules:
+                        1. If the user greets (Hi, Hello), reply politely asking how you can help.
+                        2. If user asks about 'hours' or 'time', reply: 'We are open Mon-Fri, 9am - 5pm EST.'
+                        3. If user asks about 'pricing' or 'cost', reply: 'Our pricing varies by enterprise needs. Would you like a sales rep to contact you?'
+                        4. For complex technical issues or complaints, do NOT reply (return should_reply: false) so a human can handle it."""
+                    }
+                },
+                {
+                    "id": "2",
+                    "user_id": user["user_id"],
+                    "name": "Smart Lead Qualifier",
+                    "type": "lead-qual",
+                    "description": "Identifies high-value prospects based on conversation context and budget keywords.",
+                    "icon": "Zap",
+                    "status": "active",
+                    "metrics": [
+                        { "label": "Leads Caught", "value": "12" },
+                        { "label": "Accuracy", "value": "95%" }
+                    ],
+                    "config": {
+                        "enabled": True,
+                        "systemPrompt": """Analyze the message for sales intent.
+                        - Tag as 'High Value' if they mention 'enterprise', 'scale', 'team', or specific budgets over $1000.
+                        - Tag as 'Urgent' if they mention 'asap', 'immediate', 'deadline', or 'now'.
+                        
+                        ACTION: If the user says "Call me" or gives a phone number, update their contact status to "Call Needed" using the "update_contact" action.
+                        
+                        Return relevant actions and tags."""
+                    }
+                },
+                {
+                    "id": "3",
+                    "user_id": user["user_id"],
+                    "name": "Sentiment & Urgency Guard",
+                    "type": "sentiment",
+                    "description": "Monitors for unhappy customers or urgent issues to escalate immediately.",
+                    "icon": "ShieldAlert",
+                    "status": "active",
+                    "metrics": [
+                        { "label": "Escalations", "value": "5" }
+                    ],
+                    "config": {
+                        "enabled": True,
+                        "systemPrompt": """Analyze the emotional tone and urgency.
+                        - Sentiment: Return 'Negative' if the user uses profanity, caps lock anger, or words like 'bad', 'broken', 'worst', 'fail'.
+                        - Sentiment: Return 'Positive' if they say 'thanks', 'great', 'love'.
+                        - Otherwise 'Neutral'.
+                        
+                        Also analyze for Urgency:
+                        - If the user seems blocked or down, you can log an 'Urgent Attention' note."""
+                    }
+                }
+            ]
+            agents_collection.insert_many(default_agents)
+            return [mongo_to_dict(a) for a in default_agents]
+            
+        return [mongo_to_dict(a) for a in agents]
+
+    except Exception as e:
+        print(f"Error fetching agents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/agents")
+async def create_agent(agent_data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Create a new AI agent"""
+    from database import get_agents_collection
+    import uuid
+    
+    try:
+        agents_collection = get_agents_collection()
+        if agents_collection is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+        
+        config = agent_data.get("config", {})
+        system_prompt = config.get("systemPrompt") or agent_data.get("systemPrompt") or "You are a helpful assistant."
+
+        new_agent = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["user_id"],
+            "name": agent_data.get("name"),
+            "type": "custom",
+            "description": agent_data.get("description", "A custom AI agent"),
+            "icon": agent_data.get("icon", "Bot"),
+            "status": "inactive",
+            "metrics": [],
+            "config": {
+                "enabled": False,
+                "systemPrompt": system_prompt
+            },
+            "createdAt": datetime.now().isoformat()
+        }
+        
+        print(f"DEBUG: Creating agent with data: {new_agent}")
+        agents_collection.insert_one(new_agent)
+        
+        # Manual conversion to ensure no ObjectId issues
+        new_agent["_id"] = str(new_agent["_id"])
+        
+        print(f"DEBUG: Created agent: {new_agent}")
+        return new_agent
+        
+    except Exception as e:
+        print(f"Error creating agent: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/agents/{agent_id}")
+async def update_agent(agent_id: str, agent_data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Update an existing agent"""
+    from database import get_agents_collection
+    
+    try:
+        agents_collection = get_agents_collection()
+        if agents_collection is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+        
+        # Ensure we don't overwrite id or user_id
+        update_fields = {k: v for k, v in agent_data.items() if k not in ["id", "user_id", "_id"]}
+        update_fields["updatedAt"] = datetime.now().isoformat()
+        
+        result = agents_collection.update_one(
+            {"id": agent_id, "user_id": user["user_id"]},
+            {"$set": update_fields}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Agent not found")
+            
+        return {"success": True, "message": "Agent updated"}
+        
+    except Exception as e:
+        print(f"Error updating agent: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

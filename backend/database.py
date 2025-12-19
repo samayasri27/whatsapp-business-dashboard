@@ -70,6 +70,8 @@ def get_messages_collection(): return get_collection("messages")
 def get_campaigns_collection(): return get_collection("campaigns")
 def get_templates_collection(): return get_collection("templates")
 def get_users_collection(): return get_collection("users")
+def get_agent_logs_collection(): return get_collection("agent_logs")
+def get_agents_collection(): return get_collection("agents")
 
 # Initialize connection on import
 Database.connect()

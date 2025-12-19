@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white rounded-xl shadow-lg w-full max-w-md overflow-hidden flex flex-col h-[600px]">
+        <!-- Header -->
+        <div class="bg-emerald-600 p-4 flex items-center gap-3 shrink-0">
+            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white font-bold">
+                SI
+            </div>
+            <div>
+                <h1 class="text-white font-bold text-lg">Simulator</h1>
+                <input type="text" id="phone" value="+15550202"
+                    class="bg-emerald-700/50 text-white text-xs px-2 py-1 rounded border-none focus:ring-0 w-32"
+                    placeholder="Phone #">
+            </div>
+            <div class="ml-auto">
+                <button onclick="clearChat()" class="text-white/70 hover:text-white text-xs">Clear</button>
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div id="chatArea"
+            class="flex-1 bg-stone-100 p-4 overflow-y-auto space-y-3 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]">
+            <div
+                class="text-center text-xs text-gray-500 my-4 bg-white/80 rounded-full py-1 px-3 inline-block mx-auto shadow-sm">
+                End-to-end encryption simulated
+            </div>
+            <!-- Messages will appear here -->
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-3 bg-gray-50 border-t border-gray-200 shrink-0">
+            <div class="flex gap-2">
+                <input type="text" id="message" onkeypress="handleEnter(event)"
+                    class="flex-1 border border-gray-300 rounded-full px-4 py-2 focus:ring-2 focus:ring-emerald-500 outline-none"
+                    placeholder="Type a message...">
+                <button onclick="sendMessage()" id="sendBtn"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path
+                            d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let lastMessageCount = 0;
+        const phoneInput = document.getElementById('phone');
+
+        // Sync every 2 seconds
+        setInterval(syncMessages, 2000);
+
+        function handleEnter(e) {
+            if (e.key === 'Enter') sendMessage();
+        }
+
+        async function syncMessages() {
+            const phone = phoneInput.value;
+            if (!phone) return;
+
+            try {
+                const res = await fetch(`http://localhost:9000/simulate/chats/${encodeURIComponent(phone)}`);
+                const data = await res.json();
+
+                if (data.messages && data.messages.length !== lastMessageCount) {
+                    renderMessages(data.messages);
+                    lastMessageCount = data.messages.length;
+                    scrollToBottom();
+                }
+            } catch (e) {
+                console.error("Sync error", e);
+            }
+        }
+
+        function renderMessages(messages) {
+            const container = document.getElementById('chatArea');
+            container.innerHTML = ''; // Full re-render for simplicity
+
+            messages.forEach(msg => {
+                const isMe = !msg.sent; // 'sent' in DB means sent BY BUSINESS. So if sent=false, it's inbound (User/Simulator)
+
+                const div = document.createElement('div');
+                div.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
+
+                div.innerHTML = `
+                    <div class="max-w-[75%] rounded-lg px-3 py-2 text-sm shadow-sm ${isMe
+                        ? 'bg-emerald-100 text-emerald-900 rounded-tr-none'
+                        : 'bg-white text-gray-800 rounded-tl-none'
+                    }">
+                        <div class="break-words">${msg.text}</div>
+                        <div class="text-[10px] mt-1 text-right opacity-70">
+                            ${new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            ${isMe ? '<span class="ml-1">✓✓</span>' : ''}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('chatArea');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const phone = document.getElementById('phone').value;
+            const messageInput = document.getElementById('message');
+            const message = messageInput.value;
+            const btn = document.getElementById('sendBtn');
+
+            if (!phone || !message) return;
+
+            // Optimistic rendering
+            const container = document.getElementById('chatArea');
+            const div = document.createElement('div');
+            div.className = `flex justify-end opacity-50`;
+            div.innerHTML = `
+                <div class="max-w-[75%] rounded-lg px-3 py-2 text-sm shadow-sm bg-emerald-100 text-emerald-900 rounded-tr-none">
+                    <div class="break-words">${message}</div>
+                    <div class="text-[10px] mt-1 text-right opacity-70">Sending...</div>
+                </div>
+            `;
+            container.appendChild(div);
+            scrollToBottom();
+
+            messageInput.value = "";
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('http://localhost:9000/simulate/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone_number: phone, message: message })
+                });
+
+                if (response.ok) {
+                    syncMessages(); // Force immediate sync
+                } else {
+                    alert("Failed to send");
+                }
+
+            } catch (error) {
+                alert("Network error");
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function clearChat() {
+            if (confirm("Clear local chat view?")) {
+                document.getElementById('chatArea').innerHTML = '';
+            }
+        }
+
+        // Initial load
+        syncMessages();
+    </script>
+</body>
+
+</html>

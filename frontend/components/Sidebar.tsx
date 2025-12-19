@@ -13,11 +13,13 @@ import {
   User as UserIcon,
   Settings,
   Shield,
+  Bot,
 } from "lucide-react";
 import DarkModeToggle from "./DarkModeToggle";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
+  { icon: Bot, label: "AI Agents", href: "/ai-agents" },
   { icon: Users, label: "Contacts", href: "/contacts" },
   { icon: MessageSquare, label: "Chat", href: "/chat", badge: 3 },
   { icon: Megaphone, label: "Campaigns", href: "/campaigns" },
@@ -51,11 +53,10 @@ export default function Sidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                    isActive
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${isActive
                       ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
                       : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
+                    }`}
                 >
                   <Icon className="w-5 h-5" />
                   <span className="flex-1">{item.label}</span>
@@ -75,11 +76,10 @@ export default function Sidebar() {
         {/* User Management (Admin only) */}
         <Link
           href="/users"
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-            pathname === "/users"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${pathname === "/users"
               ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
               : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-          }`}
+            }`}
         >
           <Shield className="w-5 h-5" />
           <span>User Management</span>
@@ -88,11 +88,10 @@ export default function Sidebar() {
         {/* Profile */}
         <Link
           href="/profile"
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-            pathname === "/profile"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${pathname === "/profile"
               ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
               : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-          }`}
+            }`}
         >
           <UserIcon className="w-5 h-5" />
           <span>Profile</span>
@@ -101,11 +100,10 @@ export default function Sidebar() {
         {/* Settings */}
         <Link
           href="/settings"
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-            pathname === "/settings"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${pathname === "/settings"
               ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
               : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-          }`}
+            }`}
         >
           <Settings className="w-5 h-5" />
           <span>Settings</span>
@@ -128,7 +126,7 @@ export default function Sidebar() {
 
         {/* User Profile (Clerk) */}
         <div className="flex items-center gap-3 px-3 py-2 pt-3 border-t border-gray-200 dark:border-gray-700">
-          <UserButton 
+          <UserButton
             afterSignOutUrl="/sign-in"
             appearance={{
               elements: {
