@@ -58,7 +58,7 @@ async def get_simulated_chat(phone_number: str):
         
         # Connect to same DB as main app
         client = MongoClient(
-             os.environ.get("MONGODB_URL", "mongodb+srv://admin:admin123@cluster0.mongodb.net/?retryWrites=true&w=majority"),
+             os.environ.get("MONGODB_URL", "mongodb+srv://sample:samplepassword.mongodb.net/?retryWrites=true&w=majority"),
              tls=True,
              tlsCAFile=certifi.where()
         )
