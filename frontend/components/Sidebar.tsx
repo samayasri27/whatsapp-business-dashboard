@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser, UserButton } from "@clerk/nextjs";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -19,16 +20,27 @@ import DarkModeToggle from "./DarkModeToggle";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-  { icon: Bot, label: "AI Agents", href: "/ai-agents" },
   { icon: Users, label: "Contacts", href: "/contacts" },
-  { icon: MessageSquare, label: "Chat", href: "/chat", badge: 3 },
+  { icon: MessageSquare, label: "Chat", href: "/chat" },
   { icon: Megaphone, label: "Campaigns", href: "/campaigns" },
   { icon: FileText, label: "Templates", href: "/templates" },
+  { icon: Bot, label: "AI Agents", href: "/ai-agents" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Simulate unread message count (in real app, this would come from API)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Random unread count for demo (0-5)
+      setUnreadCount(Math.floor(Math.random() * 6));
+    }, 10000); // Update every 10 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col">
@@ -60,9 +72,9 @@ export default function Sidebar() {
                 >
                   <Icon className="w-5 h-5" />
                   <span className="flex-1">{item.label}</span>
-                  {item.badge && (
+                  {item.href === "/chat" && unreadCount > 0 && (
                     <span className="bg-emerald-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                      {item.badge}
+                      {unreadCount}
                     </span>
                   )}
                 </Link>
@@ -115,10 +127,13 @@ export default function Sidebar() {
           <span className="text-sm text-gray-700 dark:text-gray-300">Dark Mode</span>
         </div>
 
-        {/* Help Link */}
+        {/* Help & Support */}
         <Link
-          href="#"
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          href="/help"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${pathname === "/help"
+              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+              : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+            }`}
         >
           <HelpCircle className="w-5 h-5" />
           <span>Help & Support</span>

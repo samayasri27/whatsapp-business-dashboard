@@ -10,9 +10,13 @@ export default function TestSimulator() {
 
   const fetchContacts = async () => {
     try {
-      const response = await fetch('/api/contacts');
+      const response = await fetch('http://localhost:8000/users?login_user=default_user', {
+        headers: {
+          'Authorization': 'Bearer debug_token'
+        }
+      });
       const data = await response.json();
-      setContacts(data.contacts || []);
+      setContacts(Array.isArray(data) ? data : data.contacts || []);
     } catch (error) {
       console.error('Error fetching contacts:', error);
     }
@@ -21,7 +25,11 @@ export default function TestSimulator() {
   const fetchMessages = async (phone: string) => {
     if (!phone) return;
     try {
-      const response = await fetch(`/api/chats/${encodeURIComponent(phone)}`);
+      const response = await fetch(`http://localhost:8000/chats/${encodeURIComponent(phone)}`, {
+        headers: {
+          'Authorization': 'Bearer debug_token'
+        }
+      });
       const data = await response.json();
       setMessages(data.messages || []);
     } catch (error) {

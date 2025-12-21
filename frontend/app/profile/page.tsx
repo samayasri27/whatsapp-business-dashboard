@@ -79,9 +79,25 @@ export default function Profile() {
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       <Sidebar />
       <div className="flex-1 overflow-auto">
-        <Header title="Profile" subtitle="Manage your account information" />
+        <Header title="Profile" subtitle="Comprehensive account and business profile management" />
         
         <div className="p-8 max-w-4xl mx-auto">
+          {/* Info Banner */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+            <div className="flex items-start gap-3">
+              <div className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5">
+                ℹ️
+              </div>
+              <div>
+                <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-1">Profile Management Options</h4>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  This page provides comprehensive profile management for your business account. 
+                  For quick profile access, you can also use the profile menu in the bottom-left corner (Clerk integration).
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Profile Header */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
             <div className="flex items-start justify-between mb-6">

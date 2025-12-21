@@ -5,7 +5,7 @@ import { useAuth } from "@clerk/nextjs";
 import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import CreateContactModal from "@/components/CreateContactModal";
-import { Phone, Download, Upload, Plus, Search, Tag, Trash2, FileDown } from "lucide-react";
+import { Phone, Download, Upload, Plus, Search, Tag, Trash2, FileDown, ChevronRight, X, Mail, Calendar, MapPin } from "lucide-react";
 import Link from "next/link";
 
 interface Contact {
@@ -28,7 +28,14 @@ export default function Contacts() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
+  const [selectedContactForDetails, setSelectedContactForDetails] = useState<Contact | null>(null);
+  const [showContactDetails, setShowContactDetails] = useState(false);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+
+  const handleContactClick = (contact: Contact) => {
+    setSelectedContactForDetails(contact);
+    setShowContactDetails(true);
+  };
 
   useEffect(() => {
     fetchContacts();
@@ -185,126 +192,225 @@ export default function Contacts() {
             />
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search contacts..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <select 
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg"
-                >
-                  <option value="all">All Status</option>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                  <option value="Blocked">Blocked</option>
-                </select>
-                <select 
-                  value={tagFilter}
-                  onChange={(e) => setTagFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg"
-                >
-                  <option value="all">All Tags</option>
-                  {availableTags.map(tag => (
-                    <option key={tag} value={tag}>{tag}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-                  <tr>
-                    <th className="px-6 py-3 text-left">
-                      <input 
-                        type="checkbox" 
-                        className="rounded"
-                        checked={selectedContacts.length === contacts.length && contacts.length > 0}
-                        onChange={(e) => handleSelectAll(e.target.checked)}
+          <div className="flex gap-6">
+            {/* Main Contacts Table */}
+            <div className={`${showContactDetails ? 'flex-1' : 'w-full'} transition-all duration-300`}>
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search contacts..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       />
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Contact</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Phone</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Tags</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Created</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {loading ? (
-                    <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">Loading...</td></tr>
-                  ) : contacts.length === 0 ? (
-                    <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">No contacts found</td></tr>
-                  ) : (
-                    contacts.map((contact) => (
-                      <tr key={contact.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-6 py-4">
+                    </div>
+                    <select 
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="px-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                      <option value="Blocked">Blocked</option>
+                    </select>
+                    <select 
+                      value={tagFilter}
+                      onChange={(e) => setTagFilter(e.target.value)}
+                      className="px-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg"
+                    >
+                      <option value="all">All Tags</option>
+                      {availableTags.map(tag => (
+                        <option key={tag} value={tag}>{tag}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                      <tr>
+                        <th className="px-6 py-3 text-left">
                           <input 
                             type="checkbox" 
                             className="rounded"
-                            checked={selectedContacts.includes(contact.id)}
-                            onChange={(e) => handleSelectContact(contact.id, e.target.checked)}
+                            checked={selectedContacts.length === contacts.length && contacts.length > 0}
+                            onChange={(e) => handleSelectAll(e.target.checked)}
                           />
-                        </td>
-                        <td className="px-6 py-4">
-                          <Link href={"/contacts/" + contact.id}>
-                            <div className="flex items-center gap-3 cursor-pointer">
-                              <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
-                                {contact.avatar}
-                              </div>
-                              <div>
-                                <p className="font-medium text-gray-900 dark:text-white">{contact.name}</p>
-                                {contact.email && <p className="text-sm text-gray-500 dark:text-gray-400">{contact.email}</p>}
-                              </div>
-                            </div>
-                          </Link>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                            <Phone className="w-4 h-4" />
-                            {contact.phone}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex gap-1 flex-wrap">
-                            {contact.tags.slice(0, 2).map((tag, i) => (
-                              <span key={tag} className={"text-xs px-2 py-1 rounded-full " + getTagColor(i)}>{tag}</span>
-                            ))}
-                            {contact.tags.length > 2 && (
-                              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                                +{contact.tags.length - 2}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={"text-xs px-2 py-1 rounded-full " + getStatusColor(contact.status)}>{contact.status}</span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                          {new Date(contact.createdAt).toLocaleDateString()}
-                        </td>
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Contact</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Phone</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Tags</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Created</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {loading ? (
+                        <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">Loading...</td></tr>
+                      ) : contacts.length === 0 ? (
+                        <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">No contacts found</td></tr>
+                      ) : (
+                        contacts.map((contact) => (
+                          <tr key={contact.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td className="px-6 py-4">
+                              <input 
+                                type="checkbox" 
+                                className="rounded"
+                                checked={selectedContacts.includes(contact.id)}
+                                onChange={(e) => handleSelectContact(contact.id, e.target.checked)}
+                              />
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
+                                  {contact.avatar}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900 dark:text-white">{contact.name}</p>
+                                  {contact.email && <p className="text-sm text-gray-500 dark:text-gray-400">{contact.email}</p>}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                                <Phone className="w-4 h-4" />
+                                {contact.phone}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex gap-1 flex-wrap">
+                                {contact.tags.slice(0, 2).map((tag, i) => (
+                                  <span key={tag} className={"text-xs px-2 py-1 rounded-full " + getTagColor(i)}>{tag}</span>
+                                ))}
+                                {contact.tags.length > 2 && (
+                                  <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                                    +{contact.tags.length - 2}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={"text-xs px-2 py-1 rounded-full " + getStatusColor(contact.status)}>{contact.status}</span>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                              {new Date(contact.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-4">
+                              <button
+                                onClick={() => handleContactClick(contact)}
+                                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                                title="View details"
+                              >
+                                <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Showing {contacts.length} contacts
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Showing {contacts.length} contacts
-              </p>
-            </div>
+            {/* Contact Details Panel */}
+            {showContactDetails && selectedContactForDetails && (
+              <div className="w-96 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 animate-in slide-in-from-right duration-300">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-semibold dark:text-white">Contact Details</h3>
+                  <button
+                    onClick={() => setShowContactDetails(false)}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                  </button>
+                </div>
+
+                <div className="text-center mb-6">
+                  <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white text-2xl font-medium mx-auto mb-3">
+                    {selectedContactForDetails.avatar}
+                  </div>
+                  <h4 className="font-semibold text-lg dark:text-white">{selectedContactForDetails.name}</h4>
+                  <span className={"text-xs px-2 py-1 rounded-full " + getStatusColor(selectedContactForDetails.status)}>
+                    {selectedContactForDetails.status}
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <Phone className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Phone</p>
+                      <p className="font-medium dark:text-white">{selectedContactForDetails.phone}</p>
+                    </div>
+                  </div>
+
+                  {selectedContactForDetails.email && (
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <Mail className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                      <div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Email</p>
+                        <p className="font-medium dark:text-white">{selectedContactForDetails.email}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <Calendar className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Created</p>
+                      <p className="font-medium dark:text-white">
+                        {new Date(selectedContactForDetails.createdAt).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedContactForDetails.tags.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Tags</p>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedContactForDetails.tags.map((tag, i) => (
+                          <span key={tag} className={"text-xs px-2 py-1 rounded-full " + getTagColor(i)}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex gap-2">
+                    <Link
+                      href={`/chat?contact=${selectedContactForDetails.phone}`}
+                      className="flex-1 bg-emerald-500 text-white px-4 py-2 rounded-lg hover:bg-emerald-600 transition-colors text-center text-sm font-medium"
+                    >
+                      Send Message
+                    </Link>
+                    <button className="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium dark:text-white">
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -58,7 +58,7 @@ export default function AgentCard({ agent, onToggle, onConfigure }: AgentCardPro
             <p className="text-gray-600 dark:text-gray-400 text-sm mb-6 h-10">{agent.description}</p>
 
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-                {agent.metrics.map((metric, idx) => (
+                {agent.metrics && Array.isArray(agent.metrics) ? agent.metrics.map((metric, idx) => (
                     <div key={idx}>
                         <p className="text-xs text-gray-500 dark:text-gray-500 mb-1">{metric.label}</p>
                         <div className="flex items-end gap-2">
@@ -75,7 +75,11 @@ export default function AgentCard({ agent, onToggle, onConfigure }: AgentCardPro
                             )}
                         </div>
                     </div>
-                ))}
+                )) : (
+                    <div className="col-span-2 text-center text-gray-500 dark:text-gray-400 text-sm">
+                        No metrics available
+                    </div>
+                )}
             </div>
         </motion.div>
     );

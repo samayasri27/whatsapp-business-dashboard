@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from bson import ObjectId
+import uuid
 
 load_dotenv()
 
@@ -69,7 +70,7 @@ DEBUG = os.getenv("DEBUG", "False") == "True"
 def verify_clerk_token(token: str) -> Dict[str, Any]:
     """Verify Clerk JWT token"""
     try:
-        if CLERK_PEM_PUBLIC_KEY and CLERK_ISSUER:
+        if CLERK_PEM_PUBLIC_KEY and CLERK_ISSUER and CLERK_PEM_PUBLIC_KEY.strip():
             payload = jwt.decode(
                 token,
                 CLERK_PEM_PUBLIC_KEY,
@@ -79,7 +80,7 @@ def verify_clerk_token(token: str) -> Dict[str, Any]:
             )
             return {"type": "clerk", "user_id": payload.get("sub"), "data": payload}
         else:
-            raise Exception("Clerk not configured")
+            raise Exception("Clerk not configured properly")
     except Exception as e:
         raise Exception(f"Clerk verification failed: {str(e)}")
 
@@ -565,15 +566,7 @@ async def get_campaigns(user: Dict[str, Any] = Depends(verify_jwt_auth)):
         print(f"Error fetching campaigns: {e}")
         return []
 
-@app.get("/campaign_contacts")
-async def get_campaign_contacts(campaign: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
-    """Get contacts for a specific campaign"""
-    return []
-
-@app.get("/imported_numbers")
-async def get_imported_numbers(sheet_name: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
-    """Get contacts from Google Sheet"""
-    return []
+# Removed redundant endpoints - functionality integrated into main endpoints
 
 @app.get("/templates")
 async def get_templates(
@@ -883,7 +876,181 @@ async def get_sheets(user: Dict[str, Any] = Depends(verify_jwt_auth)):
         }
     ]
 
-# Additional endpoints for full functionality
+@app.get("/api/agents")
+async def get_agents(user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Get all AI agents for the user"""
+    # Demo agents for hackathon
+    demo_agents = [
+        {
+            "id": "1",
+            "name": "Customer Support Bot",
+            "description": "Handles common customer inquiries and support tickets",
+            "type": "support",
+            "icon": "Bot",
+            "status": "active",
+            "config": {
+                "enabled": True,
+                "systemPrompt": "You are a helpful customer support assistant. Respond professionally and try to resolve customer issues.",
+                "triggers": ["support", "help", "issue", "problem"],
+                "autoReply": True,
+                "workingHours": "24/7"
+            },
+            "metrics": [
+                {"label": "Messages", "value": "1,247", "change": "+12%"},
+                {"label": "Avg Response", "value": "2.3s", "change": "-0.5s"},
+                {"label": "Satisfaction", "value": "94%", "change": "+2%"},
+                {"label": "Active Hours", "value": "24/7"}
+            ]
+        },
+        {
+            "id": "2", 
+            "name": "Sales Assistant",
+            "description": "Qualifies leads and provides product information",
+            "type": "sales",
+            "icon": "TrendingUp",
+            "status": "active",
+            "config": {
+                "enabled": True,
+                "systemPrompt": "You are a sales assistant. Help customers learn about products and guide them through the sales process.",
+                "triggers": ["price", "buy", "product", "demo", "quote"],
+                "autoReply": True,
+                "workingHours": "9AM-6PM"
+            },
+            "metrics": [
+                {"label": "Messages", "value": "892", "change": "+8%"},
+                {"label": "Avg Response", "value": "1.8s", "change": "-0.2s"},
+                {"label": "Satisfaction", "value": "91%", "change": "+1%"},
+                {"label": "Conversion", "value": "23%", "change": "+5%"}
+            ]
+        },
+        {
+            "id": "3",
+            "name": "Lead Qualifier",
+            "description": "Automatically tags and scores incoming leads",
+            "type": "automation",
+            "icon": "Target",
+            "status": "inactive",
+            "config": {
+                "enabled": False,
+                "systemPrompt": "Analyze incoming messages to qualify leads and assign appropriate tags.",
+                "triggers": ["interested", "budget", "timeline", "decision"],
+                "autoReply": False,
+                "workingHours": "24/7"
+            },
+            "metrics": [
+                {"label": "Messages", "value": "456"},
+                {"label": "Leads Tagged", "value": "89", "change": "+15%"},
+                {"label": "Accuracy", "value": "89%", "change": "+3%"},
+                {"label": "Avg Score", "value": "7.2/10"}
+            ]
+        },
+        {
+            "id": "4",
+            "name": "Appointment Scheduler",
+            "description": "Books meetings and manages calendar availability",
+            "type": "scheduling",
+            "icon": "Calendar",
+            "status": "inactive",
+            "config": {
+                "enabled": False,
+                "systemPrompt": "Help customers schedule appointments and meetings. Check availability and book time slots.",
+                "triggers": ["meeting", "appointment", "schedule", "book", "calendar"],
+                "autoReply": True,
+                "workingHours": "9AM-5PM"
+            },
+            "metrics": [
+                {"label": "Appointments", "value": "234", "change": "+18%"},
+                {"label": "Avg Response", "value": "3.1s"},
+                {"label": "Satisfaction", "value": "96%", "change": "+4%"},
+                {"label": "Booking Rate", "value": "78%", "change": "+6%"}
+            ]
+        }
+    ]
+    
+    return demo_agents
+
+@app.post("/api/agents")
+async def create_agent(agent_data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Create a new AI agent"""
+    # In a real app, this would save to database
+    new_agent = {
+        "id": str(uuid.uuid4()),
+        "name": agent_data.get("name"),
+        "description": agent_data.get("description", ""),
+        "type": "custom",
+        "icon": "Bot",
+        "status": "inactive",
+        "config": {
+            "enabled": False,
+            "systemPrompt": agent_data.get("config", {}).get("systemPrompt", ""),
+            "triggers": [],
+            "autoReply": True,
+            "workingHours": "24/7"
+        },
+        "metrics": [
+            {"label": "Messages", "value": "0"},
+            {"label": "Avg Response", "value": "0s"},
+            {"label": "Satisfaction", "value": "0%"},
+            {"label": "Status", "value": "New"}
+        ]
+    }
+    
+    return new_agent
+
+@app.put("/api/agents/{agent_id}")
+async def update_agent(agent_id: str, agent_data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Update an AI agent"""
+    # In a real app, this would update the database
+    return {"success": True, "message": "Agent updated successfully"}
+
+@app.post("/api/ai/process")
+async def process_message_with_ai(data: dict, user: Dict[str, Any] = Depends(verify_jwt_auth)):
+    """Process a message with AI agents"""
+    message = data.get("message", "")
+    contact_id = data.get("contactId", "")
+    active_agents = data.get("activeAgents", [])
+    
+    # Simple AI processing for demo
+    result = {
+        "reply": None,
+        "tags": [],
+        "sentiment": "neutral",
+        "logs": []
+    }
+    
+    # Check if any active agents should respond
+    for agent in active_agents:
+        if agent.get("config", {}).get("enabled"):
+            triggers = agent.get("config", {}).get("triggers", [])
+            
+            # Check if message contains any triggers
+            message_lower = message.lower()
+            triggered = any(trigger in message_lower for trigger in triggers)
+            
+            if triggered:
+                # Generate appropriate response based on agent type
+                agent_type = agent.get("type", "")
+                
+                if agent_type == "support":
+                    result["reply"] = "Thank you for contacting support! I'm here to help you resolve any issues. Could you please provide more details about your concern?"
+                    result["tags"].append("support-inquiry")
+                elif agent_type == "sales":
+                    result["reply"] = "Great to hear you're interested! I'd be happy to help you learn more about our products. What specific information are you looking for?"
+                    result["tags"].append("sales-lead")
+                elif agent_type == "scheduling":
+                    result["reply"] = "I can help you schedule an appointment! What type of meeting are you looking for and what's your preferred time?"
+                    result["tags"].append("scheduling-request")
+                
+                # Add log entry
+                result["logs"].append({
+                    "agentId": agent.get("id"),
+                    "action": "Message Processed",
+                    "details": f"Triggered by keywords in: '{message[:50]}...'"
+                })
+                
+                break  # Only let one agent respond
+    
+    return result
 
 @app.get("/contacts/{contact_id}")
 async def get_contact(contact_id: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
@@ -1361,10 +1528,7 @@ async def get_dashboard_stats(user: Dict[str, Any] = Depends(verify_jwt_auth)):
             "messagesChange": "0%"
         }
 
-@app.get("/{campaign_name}")
-async def get_campaign_status(campaign_name: str, user: Dict[str, Any] = Depends(verify_jwt_auth)):
-    """Get campaign status"""
-    return {"name": campaign_name, "status": "Active"}
+# Removed catch-all endpoint to avoid conflicts with other routes
 
 # User Management Endpoints
 

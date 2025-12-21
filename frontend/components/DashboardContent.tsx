@@ -4,6 +4,7 @@ import { Users, MessageSquare, Send, TrendingUp, BarChart3 } from "lucide-react"
 import { useDashboardStats } from "@/hooks/useDashboard";
 import { useContacts } from "@/hooks/useContacts";
 import { useCampaigns } from "@/hooks/useCampaigns";
+import { MessageAnalyticsChart, CampaignDistributionChart, WeeklyPerformanceChart } from "./DashboardCharts";
 
 export default function DashboardContent() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
@@ -121,23 +122,8 @@ export default function DashboardContent() {
               ))}
             </div>
           </div>
-          <div className="h-64 flex items-end justify-between gap-2">
-            {[40, 55, 45, 60, 50, 70, 65].map((height, i) => (
-              <div key={i} className="flex-1 flex flex-col gap-2">
-                <div
-                  className="bg-gradient-to-t from-emerald-500 to-emerald-300 rounded-t-lg"
-                  style={{ height: `${height}%` }}
-                />
-                <div
-                  className="bg-gradient-to-t from-teal-500 to-teal-300 rounded-t-lg"
-                  style={{ height: `${height * 0.8}%` }}
-                />
-                <div
-                  className="bg-gradient-to-t from-blue-500 to-blue-300 rounded-t-lg"
-                  style={{ height: `${height * 0.6}%` }}
-                />
-              </div>
-            ))}
+          <div className="h-64">
+            <MessageAnalyticsChart />
           </div>
           <div className="flex justify-center gap-6 mt-6">
             <div className="flex items-center gap-2">
@@ -208,7 +194,7 @@ export default function DashboardContent() {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-6">
+          <div className="mt-6 grid grid-cols-2 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold dark:text-white">Recent Activity</h3>
@@ -266,6 +252,19 @@ export default function DashboardContent() {
           <button className="mt-6 w-full bg-emerald-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2">
             View Details →
           </button>
+        </div>
+      </div>
+
+      {/* Additional Charts Row */}
+      <div className="mt-6 grid grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-4 dark:text-white">Campaign Distribution</h3>
+          <CampaignDistributionChart />
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-4 dark:text-white">Weekly Performance</h3>
+          <WeeklyPerformanceChart />
         </div>
       </div>
     </div>

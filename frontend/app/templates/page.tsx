@@ -5,7 +5,7 @@ import { useAuth } from "@clerk/nextjs";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
 import TemplateParameterModal from "@/components/TemplateParameterModal";
-import { Eye, Copy, Edit, Search, Filter, Plus, Trash2 } from "lucide-react";
+import { Eye, Copy, Edit, Search, Filter, Plus, Trash2, MessageSquare } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface Template {
@@ -317,7 +317,14 @@ export default function Templates() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => setSelectedTemplate(template)}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm dark:text-gray-200 transition-colors"
+                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 text-sm transition-colors"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          Use
+                        </button>
+                        <button
+                          onClick={() => setSelectedTemplate(template)}
+                          className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm dark:text-gray-200 transition-colors"
                         >
                           <Eye className="w-4 h-4" />
                           Preview

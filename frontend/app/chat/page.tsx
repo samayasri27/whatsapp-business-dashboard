@@ -2,7 +2,7 @@
 import Sidebar from "@/components/Sidebar";
 
 import Header from "@/components/Header";
-import { Search, Plus, Phone, Video, MoreVertical, Smile, Paperclip, Send, Check, CheckCheck, Image as ImageIcon, FileText, X, MessageSquare } from "lucide-react";
+import { Search, Plus, Phone, Video, MoreVertical, Smile, Paperclip, Send, Check, CheckCheck, Image as ImageIcon, FileText, X, MessageSquare, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useAuth, useUser } from "@clerk/nextjs";
 import toast from "react-hot-toast";
@@ -58,8 +58,98 @@ export default function Chat() {
   const [selectedTemplate, setSelectedTemplate] = useState<{ title: string; message: string } | null>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [showContactDetails, setShowContactDetails] = useState(true);
+  const [aiAutoReplyEnabled, setAiAutoReplyEnabled] = useState(false);
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const [lastProcessedMessageId, setLastProcessedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sort contacts by latest message time
+  const sortedContacts = [...contacts].sort((a, b) => {
+    const timeA = new Date(a.lastMessageTime || 0).getTime();
+    const timeB = new Date(b.lastMessageTime || 0).getTime();
+    return timeB - timeA; // Latest first
+  });
+
+  // AI Auto-Reply System
+  const generateAiResponse = (userMessage: string): string => {
+    const message = userMessage.toLowerCase();
+    
+    // Simple keyword-based responses for demo
+    if (message.includes('hello') || message.includes('hi') || message.includes('hey')) {
+      return "Hello! Thank you for reaching out. How can I assist you today?";
+    }
+    if (message.includes('price') || message.includes('cost') || message.includes('pricing')) {
+      return "I'd be happy to help you with pricing information. Let me connect you with our sales team for detailed pricing options.";
+    }
+    if (message.includes('support') || message.includes('help') || message.includes('issue')) {
+      return "I understand you need support. I'm here to help! Could you please describe the issue you're experiencing?";
+    }
+    if (message.includes('product') || message.includes('service')) {
+      return "Great question about our products/services! Let me provide you with some information. What specific aspect would you like to know more about?";
+    }
+    if (message.includes('thank')) {
+      return "You're very welcome! Is there anything else I can help you with today?";
+    }
+    if (message.includes('bye') || message.includes('goodbye')) {
+      return "Thank you for contacting us! Have a great day and feel free to reach out anytime.";
+    }
+    
+    // Default responses
+    const defaultResponses = [
+      "Thank you for your message! I'm processing your request and will get back to you shortly.",
+      "I appreciate you reaching out. Let me look into this for you right away.",
+      "Thanks for contacting us! I'm here to help. Could you provide a bit more detail about what you need?",
+      "I received your message and I'm working on a response. Thank you for your patience!",
+    ];
+    
+    return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+  };
+
+  const sendAiReply = async (originalMessage: string, phoneNumber: string) => {
+    if (!aiAutoReplyEnabled) return;
+    
+    setIsAiTyping(true);
+    
+    // Simulate AI thinking time
+    setTimeout(async () => {
+      const aiResponse = generateAiResponse(originalMessage);
+      const tempId = `ai-${Date.now()}`;
+      
+      // Add AI message
+      const aiMessage: Message = {
+        id: tempId,
+        phoneNumber: phoneNumber,
+        text: aiResponse,
+        timestamp: new Date().toISOString(),
+        sent: true,
+        status: "sent",
+      };
+      
+      setMessages(prev => [...prev, aiMessage]);
+      setIsAiTyping(false);
+      
+      // Send to backend
+      try {
+        const token = await getToken();
+        await fetch(`http://localhost:8000/send`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            phone: phoneNumber,
+            message: aiResponse,
+            isAiReply: true,
+          }),
+        });
+      } catch (error) {
+        console.error("Error sending AI reply:", error);
+      }
+    }, 1500 + Math.random() * 2000); // Random delay between 1.5-3.5 seconds
+  };
 
   // Format timestamp to relative time
   const formatTimestamp = (timestamp: string) => {
@@ -111,17 +201,74 @@ export default function Chat() {
   const fetchContacts = async () => {
     try {
       const token = await getToken();
-      const response = await fetch(`http://localhost:8000/users?login_user=${user?.id || 'default_user'}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json"
+      };
+      
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      
+      // Use the contacts endpoint instead of users
+      const response = await fetch(`http://localhost:8000/contacts`, { headers });
 
       if (response.ok) {
         const data = await response.json();
-        setContacts(data);
-        if (data.length > 0 && !selectedContact) {
-          setSelectedContact(data[0]);
+        console.log("📱 Fetched contacts for chat:", data.contacts?.length || 0);
+        
+        // Transform contacts data to include chat-specific fields
+        const chatContacts = (data.contacts || []).map((contact: any) => ({
+          id: contact.id,
+          name: contact.name,
+          phone: contact.phone,
+          email: contact.email,
+          avatar: contact.name?.substring(0, 2).toUpperCase() || "??",
+          status: contact.status || "Active",
+          tags: contact.tags || [],
+          lastMessage: "Click to start conversation",
+          lastMessageTime: contact.createdAt || new Date().toISOString(),
+          unreadCount: Math.floor(Math.random() * 3), // Random for demo
+          online: Math.random() > 0.5, // Random online status for demo
+        }));
+        
+        setContacts(chatContacts);
+        if (chatContacts.length > 0 && !selectedContact) {
+          setSelectedContact(chatContacts[0]);
+        }
+      } else {
+        console.error("Failed to fetch contacts:", response.status);
+        // Fallback to sample data for demo
+        const sampleContacts = [
+          {
+            id: "1",
+            name: "Sarah Johnson",
+            phone: "+1234567890",
+            email: "sarah@example.com",
+            avatar: "SJ",
+            status: "Active",
+            tags: ["VIP", "Customer"],
+            lastMessage: "Thanks for the quick response!",
+            lastMessageTime: new Date(Date.now() - 300000).toISOString(), // 5 min ago
+            unreadCount: 2,
+            online: true,
+          },
+          {
+            id: "2",
+            name: "Mike Chen",
+            phone: "+1234567891",
+            email: "mike@example.com",
+            avatar: "MC",
+            status: "Active",
+            tags: ["Lead"],
+            lastMessage: "I'm interested in your services",
+            lastMessageTime: new Date(Date.now() - 900000).toISOString(), // 15 min ago
+            unreadCount: 1,
+            online: false,
+          },
+        ];
+        setContacts(sampleContacts);
+        if (!selectedContact) {
+          setSelectedContact(sampleContacts[0]);
         }
       }
     } catch (error) {
@@ -148,7 +295,32 @@ export default function Chat() {
 
       if (response.ok) {
         const data = await response.json();
-        setMessages(data.messages || []);
+        const newMessages = data.messages || [];
+        
+        // Only trigger AI reply for truly new incoming messages
+        if (aiAutoReplyEnabled && lastProcessedMessageId) {
+          const newIncomingMessages = newMessages
+            .filter((msg: Message) => !msg.sent && msg.id !== lastProcessedMessageId)
+            .sort((a: Message, b: Message) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          
+          // Process only the latest new incoming message
+          if (newIncomingMessages.length > 0) {
+            const latestMessage = newIncomingMessages[newIncomingMessages.length - 1];
+            console.log("🤖 New incoming message detected, triggering AI reply:", latestMessage.text);
+            sendAiReply(latestMessage.text, phoneNumber);
+            setLastProcessedMessageId(latestMessage.id);
+          }
+        } else if (newMessages.length > 0) {
+          // Set initial last processed message ID
+          const lastIncoming = newMessages
+            .filter((msg: Message) => !msg.sent)
+            .sort((a: Message, b: Message) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+          if (lastIncoming) {
+            setLastProcessedMessageId(lastIncoming.id);
+          }
+        }
+        
+        setMessages(newMessages);
       }
     } catch (error) {
       console.error("Error fetching messages:", error);
@@ -391,7 +563,10 @@ export default function Chat() {
                   <p>No contacts found</p>
                 </div>
               ) : (
-                filteredContacts.map((contact) => (
+                sortedContacts.filter((contact) =>
+                  contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  contact.phone.includes(searchQuery)
+                ).map((contact) => (
                   <div
                     key={contact.id}
                     onClick={() => setSelectedContact(contact)}
@@ -450,11 +625,68 @@ export default function Chat() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mr-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={aiAutoReplyEnabled}
+                        onChange={(e) => setAiAutoReplyEnabled(e.target.checked)}
+                        className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-gray-600 dark:text-gray-300">AI Auto-Reply</span>
+                    </label>
+                    {aiAutoReplyEnabled && (
+                      <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                    )}
+                  </div>
+                  
+                  {/* Demo: Simulate incoming message button */}
+                  <button
+                    onClick={() => {
+                      if (!selectedContact) return;
+                      const demoMessages = [
+                        "Hello, I'm interested in your products",
+                        "What are your pricing options?",
+                        "I need help with my order",
+                        "Thank you for your service",
+                        "Can you tell me more about your services?",
+                      ];
+                      const randomMessage = demoMessages[Math.floor(Math.random() * demoMessages.length)];
+                      const incomingMessage: Message = {
+                        id: `demo-${Date.now()}`,
+                        phoneNumber: selectedContact.phone,
+                        text: randomMessage,
+                        timestamp: new Date().toISOString(),
+                        sent: false,
+                        status: "read",
+                      };
+                      setMessages(prev => [...prev, incomingMessage]);
+                      // Trigger AI reply if enabled
+                      if (aiAutoReplyEnabled) {
+                        sendAiReply(randomMessage, selectedContact.phone);
+                      }
+                    }}
+                    className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors mr-2"
+                    title="Simulate incoming message (Demo)"
+                  >
+                    📱 Demo
+                  </button>
                   <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                     <Phone className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                   </button>
                   <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                     <Video className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                  <button 
+                    onClick={() => setShowContactDetails(!showContactDetails)}
+                    className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+                    title={showContactDetails ? "Hide contact details" : "Show contact details"}
+                  >
+                    {showContactDetails ? (
+                      <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                    ) : (
+                      <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                    )}
                   </button>
                   <button className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                     <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-300" />
@@ -509,6 +741,24 @@ export default function Chat() {
                       </div>
                     </div>
                   ))
+                )}
+                
+                {/* AI Typing Indicator */}
+                {isAiTyping && (
+                  <div className="flex justify-start">
+                    <div className="max-w-md">
+                      <div className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-2xl rounded-bl-none px-4 py-2 shadow-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                          </div>
+                          <span className="text-xs text-gray-500">AI is typing...</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
@@ -583,8 +833,8 @@ export default function Chat() {
           )}
 
           {/* Contact Info Panel */}
-          {selectedContact && (
-            <div className="w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6 overflow-y-auto">
+          {selectedContact && showContactDetails && (
+            <div className="w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6 overflow-y-auto animate-in slide-in-from-right duration-300">
               <div className="text-center mb-6">
                 <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white text-2xl font-medium mx-auto mb-3">
                   {selectedContact.avatar}
@@ -594,17 +844,20 @@ export default function Chat() {
                   {selectedContact.online ? "Online" : "Offline"}
                 </p>
               </div>
+              
               <div className="space-y-4">
-                <div>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Email</p>
                   <p className="text-sm dark:text-gray-200">{selectedContact.email || "Not provided"}</p>
                 </div>
-                <div>
+                
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Phone</p>
                   <p className="text-sm dark:text-gray-200">{selectedContact.phone}</p>
                 </div>
+                
                 {selectedContact.tags && selectedContact.tags.length > 0 && (
-                  <div>
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                     <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Tags</p>
                     <div className="flex flex-wrap gap-2">
                       {selectedContact.tags.map((tag) => (
@@ -618,6 +871,25 @@ export default function Chat() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Quick Actions */}
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <h4 className="text-sm font-medium mb-3 dark:text-white">Quick Actions</h4>
+                <div className="space-y-2">
+                  <button className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-sm dark:text-gray-200">Call Contact</span>
+                  </button>
+                  <button className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <Video className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span className="text-sm dark:text-gray-200">Video Call</span>
+                  </button>
+                  <button className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <MessageSquare className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-sm dark:text-gray-200">View Profile</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

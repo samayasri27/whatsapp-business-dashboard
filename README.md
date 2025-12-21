@@ -225,12 +225,13 @@ CLERK_SECRET_KEY=sk_test_...
 ```
 
 ### Backend Environment Variables
-Create `backend/.env`:
+Located at `backend/.env`:
 
 ```env
 JWT_SECRET=your_secret_here
 MONGODB_URL=mongodb://localhost:27017
 MONGODB_DB_NAME=whatsapp_business
+DEBUG=True
 ```
 
 ---
