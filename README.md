@@ -1,23 +1,15 @@
 # WhatsApp Business Dashboard
 
-A modern, full-stack WhatsApp Business management platform built with Next.js and FastAPI.
+A modern, full-stack WhatsApp Business management platform built with Next.js and FastAPI. Manage contacts, campaigns, templates, and conversations with an intuitive interface and powerful automation features.
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js 18+
 - Python 3.8+
-- MongoDB (optional - uses mock data by default)
+- MongoDB (configured with connection string)
 
-### 1. Start Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-Frontend runs on: **http://localhost:3000**
-
-### 2. Start Backend (Optional)
+### 1. Start Backend
 ```bash
 cd backend
 python -m venv venv
@@ -27,10 +19,30 @@ python main.py
 ```
 Backend runs on: **http://localhost:8000**
 
-### 3. Access the App
+### 2. Start Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Frontend runs on: **http://localhost:3000**
+
+### 3. Start Simulator (Optional)
+```bash
+cd simulator_app
+pip install -r requirements.txt
+python3 backend/main.py
+```
+Simulator runs on: **http://localhost:9001**
+
+### 4. Access the App
 1. Open http://localhost:3000
-2. Sign up with any email (Clerk test mode)
+2. Sign up with Clerk authentication
 3. Explore the dashboard!
+
+### 5. Test Integration
+- Visit http://localhost:3000/test-simulator for testing message sync
+- Use the simulator to send test messages and see them appear in the dashboard
 
 ---
 
@@ -171,7 +183,13 @@ Backend runs on: **http://localhost:8000**
 ### Backend
 - **Framework**: FastAPI (Python)
 - **Database**: MongoDB
-- **Auth**: JWT
+- **Auth**: Hybrid (Clerk + JWT)
+- **AI Integration**: Groq API for intelligent responses
+
+### Additional Components
+- **WhatsApp Simulator**: Testing tool for message simulation
+- **Real-time Sync**: Messages sync between simulator and dashboard
+- **AI Agents**: Automated response system with sentiment analysis
 
 ---
 
@@ -185,26 +203,26 @@ Backend runs on: **http://localhost:8000**
 │   │   ├── contacts/     # Contacts pages
 │   │   ├── chat/         # Chat page
 │   │   ├── campaigns/    # Campaigns page
-│   │   └── templates/    # Templates page
+│   │   ├── templates/    # Templates page
+│   │   ├── ai-agents/    # AI Agents management
+│   │   └── test-simulator/ # Testing interface
 │   ├── components/       # React components
-│   │   ├── Header.tsx
-│   │   ├── Sidebar.tsx
-│   │   ├── DarkModeToggle.tsx
-│   │   ├── CreateCampaignModal.tsx
-│   │   ├── CreateContactModal.tsx
-│   │   └── TemplateParameterModal.tsx
 │   ├── hooks/           # Custom hooks
 │   ├── lib/             # API client
 │   ├── store/           # Zustand store
 │   └── types/           # TypeScript types
 │
 ├── backend/             # FastAPI backend
-│   ├── main.py         # API routes
+│   ├── main.py         # API routes with hybrid auth
 │   ├── database.py     # MongoDB connection
 │   └── models.py       # Data models
 │
+├── simulator_app/       # WhatsApp Simulator
+│   ├── backend/        # Simulator API
+│   ├── frontend/       # Simulator UI
+│   └── requirements.txt
+│
 ├── README.md           # This file
-├── HACKATHON_SUBMISSION.md
 └── docker-compose.yml
 ```
 
@@ -228,10 +246,49 @@ CLERK_SECRET_KEY=sk_test_...
 Located at `backend/.env`:
 
 ```env
-JWT_SECRET=your_secret_here
-MONGODB_URL=mongodb://localhost:27017
-MONGODB_DB_NAME=whatsapp_business
+# MongoDB Configuration
+MONGODB_URL=mongodb+srv://your_connection_string
+MONGODB_DB_NAME=whatsapp-business
+
+# Clerk Authentication
+CLERK_PEM_PUBLIC_KEY=-----BEGIN PUBLIC KEY-----...
+CLERK_ISSUER=https://your-clerk-domain.clerk.accounts.dev
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+
+# JWT Configuration
+JWT_SECRET=your_secret_key_change_in_production
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_HOURS=24
+
+# AI Integration
+GROQ_API_KEY=your_groq_api_key
+
+# WhatsApp Business API (Optional)
+WHATSAPP_API_URL=https://graph.facebook.com/v18.0
+WHATSAPP_ACCESS_TOKEN=your_whatsapp_token
+WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=8000
 DEBUG=True
+```
+
+### Simulator Environment Variables
+Located at `simulator_app/.env`:
+
+```env
+# MongoDB Configuration (same as backend)
+MONGODB_URL=mongodb+srv://your_connection_string
+MONGODB_DB_NAME=whatsapp-business
+
+# Main App URL
+MAIN_APP_URL=http://localhost:8000/webhooks/inbound
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=9001
 ```
 
 ---
@@ -384,20 +441,6 @@ docker-compose up
 
 ---
 
-## 📈 Hackathon Score
-
-**Total: 130/100** 🎉
-
-- Functionality: 30/30 ✅
-- Code Quality: 20/20 ✅
-- UI/UX Design: 20/20 ✅
-- Performance: 10/10 ✅
-- Best Practices: 10/10 ✅
-- Innovation: 10/10 ✅
-- Bonus Points: +30 ✅
-
----
-
 ## 🎯 Key Features Summary
 
 | Feature | Status | How to Access |
@@ -417,16 +460,44 @@ docker-compose up
 | Toast Notifications | ✅ Working | Submit any form |
 | Responsive Design | ✅ Working | Resize browser |
 | PWA | ✅ Configured | Production build only |
+| AI Agents | ✅ Working | Sidebar → AI Agents |
+| WhatsApp Simulator | ✅ Working | http://localhost:9001 |
+| Message Sync | ✅ Working | /test-simulator |
+
+---
+
+## 🤖 AI & Automation Features
+
+### AI Agents
+- **Intelligent Response System**: Automated replies based on message content
+- **Sentiment Analysis**: Analyze customer sentiment in real-time
+- **Lead Qualification**: Automatically tag and categorize contacts
+- **Custom Prompts**: Configure AI behavior for different scenarios
+
+### WhatsApp Simulator
+- **Message Testing**: Simulate incoming WhatsApp messages
+- **Real-time Sync**: Messages appear instantly in the dashboard
+- **Contact Creation**: Automatically creates contacts for new numbers
+- **Integration Testing**: Perfect for testing webhook integrations
+
+### How to Test AI Features
+1. Start the simulator: `cd simulator_app && python3 backend/main.py`
+2. Visit the test page: http://localhost:3000/test-simulator
+3. Send a test message using the "Send Test Message" button
+4. Watch as the AI agent responds automatically
+5. Check the dashboard to see the new contact and conversation
 
 ---
 
 ## 💡 Tips
 
-1. **All features work with mock data** - No backend needed for demo
-2. **Dark mode persists** - Try it and refresh
-3. **Forms validate** - Try submitting empty forms
-4. **Modals work** - Click any "Add" or "Create" button
-5. **Navigation works** - Use sidebar to switch pages
+1. **Full-stack integration** - Backend, frontend, and simulator all work together
+2. **Real-time messaging** - Test message sync with the simulator
+3. **AI-powered responses** - Agents automatically respond to messages
+4. **Dark mode persists** - Try it and refresh
+5. **Forms validate** - Try submitting empty forms
+6. **Authentication required** - Use Clerk to sign in for full access
+7. **Test page available** - Use /test-simulator to test without auth
 
 ---
 
@@ -439,14 +510,3 @@ If something doesn't work:
 4. Clear localStorage and try again
 
 ---
-
-## 🎉 Ready to Demo!
-
-All features are working and ready for demonstration. Just run:
-
-```bash
-cd frontend
-npm run dev
-```
-
-Then open http://localhost:3000 and explore! 🚀
