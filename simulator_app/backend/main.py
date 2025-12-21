@@ -5,6 +5,10 @@ from pydantic import BaseModel
 import requests
 import uvicorn
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(title="WhatsApp Simulator")
 
@@ -16,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MAIN_APP_URL = "http://localhost:8000/webhooks/inbound"
+MAIN_APP_URL = os.environ.get("MAIN_APP_URL", "http://localhost:8000/webhooks/inbound")
 
 class InboundMessage(BaseModel):
     phone_number: str
@@ -57,12 +61,15 @@ async def get_simulated_chat(phone_number: str):
         import certifi
         
         # Connect to same DB as main app
+        mongodb_url = os.environ.get("MONGODB_URL", "mongodb+srv://avenger3202_db_user:3J03D2NCKyTRcCmJ@wbusinesscluster1.vctizdk.mongodb.net/?retryWrites=true&w=majority")
+        db_name = os.environ.get("MONGODB_DB_NAME", "whatsapp-business")
+        
         client = MongoClient(
-             os.environ.get("MONGODB_URL", "mongodb+srv://sample:samplepassword.mongodb.net/?retryWrites=true&w=majority"),
+             mongodb_url,
              tls=True,
              tlsCAFile=certifi.where()
         )
-        db = client["whatsapp_business"]
+        db = client[db_name]
         messages_collection = db["messages"]
         
         messages = list(messages_collection.find({"phoneNumber": phone_number}).sort("timestamp", 1))
@@ -77,4 +84,4 @@ async def get_simulated_chat(phone_number: str):
         return {"messages": []}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=9000)
+    uvicorn.run(app, host="0.0.0.0", port=9001)

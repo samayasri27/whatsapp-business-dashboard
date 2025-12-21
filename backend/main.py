@@ -1743,14 +1743,12 @@ async def inbound_webhook(data: dict):
         
         # 1. Find or Create Contact
         contact = contacts_collection.find_one({"phone": phone})
+        
+        # Set user_id - either from existing contact or default for new contacts
+        user_id = "default_user"  # Default user for simulation (matches debug mode)
+        
         if not contact:
             # Create new contact
-            # We need a user_id. For simulation, pick the first user or a demo user.
-            # In real system, phone numbers are associated with a business account.
-            # We'll use a hardcoded fallback to the active user seen in logs
-            # This ensures the data appears in your specific dashboard
-            user_id = "user_36IiebBm05vnLWSl4eoiBiPKZlr" 
-            
             contact_id = str(uuid.uuid4())
             new_contact = {
                 "id": contact_id,
@@ -1763,6 +1761,11 @@ async def inbound_webhook(data: dict):
             }
             contacts_collection.insert_one(new_contact)
             contact = new_contact
+        else:
+            # Use existing contact's user_id if available
+            user_id = contact.get("user_id", user_id)
+            
+        contact_id = contact.get("id")
 
         # 2. Save User Message
         user_message = {
